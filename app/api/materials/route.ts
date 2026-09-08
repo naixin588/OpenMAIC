@@ -64,6 +64,7 @@ import {
 } from '@/lib/persistence/owner-materials';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { MaterialByteStoreError } from '@/lib/server/materials/byte-store';
 import { ownerMaterialObjectKey } from '@/lib/server/materials/object-keys';
 import {
   isWorkbenchMaterialMime,
@@ -447,7 +448,12 @@ export async function POST(req: NextRequest) {
         console.info('material upload completed', context({ status: 201 }));
         return res;
       } catch (error) {
-        let bytesDeleted = !bytesStored;
+        // A remote PUT can still commit after its response is lost. An immediate
+        // DELETE is not a fence against that late write. Keep the reservation
+        // for the existing 24-hour stale sweep, including when readback failed.
+        const writeUncertain =
+          error instanceof MaterialByteStoreError && error.code === 'MATERIAL_BYTE_WRITE_UNCERTAIN';
+        let bytesDeleted = !bytesStored && !writeUncertain;
         if (bytesStored && safeToDeleteStoredBytes) {
           try {
             await byteStore.delete(ossKey);

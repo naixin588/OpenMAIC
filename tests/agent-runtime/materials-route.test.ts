@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 import type { OwnerMaterialRecord } from '@/lib/persistence/owner-materials';
 import { ownerMaterialObjectKey } from '@/lib/server/materials/object-keys';
+import { MaterialByteStoreError } from '@/lib/server/materials/byte-store';
 
 const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
@@ -361,6 +362,41 @@ describe('POST /api/materials', () => {
     expect(mocks.byteStore.put).not.toHaveBeenCalled();
     expect(mocks.finalizeOwnerMaterial).not.toHaveBeenCalled();
   });
+
+  it.each([true, false])(
+    'retains the reservation for an uncertain remote PUT (late commit: %s)',
+    async (lateCommit) => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        const remoteObjects = new Map<string, Buffer>();
+        let finishRemotePut: (() => void) | undefined;
+        mocks.byteStore.put.mockImplementation(async (key: string, bytes: Buffer) => {
+          finishRemotePut = () => remoteObjects.set(key, bytes);
+          throw new MaterialByteStoreError(
+            'MATERIAL_BYTE_WRITE_UNCERTAIN',
+            'material byte write could not be confirmed',
+          );
+        });
+
+        const response = await post(Buffer.from('hello'));
+        if (lateCommit) finishRemotePut?.();
+
+        expect(response.status).toBe(500);
+        expect(mocks.finalizeOwnerMaterial).not.toHaveBeenCalled();
+        expect(mocks.byteStore.delete).not.toHaveBeenCalled();
+        expect(mocks.abandonOwnerMaterial).not.toHaveBeenCalled();
+        if (lateCommit) {
+          const objectKey = mocks.byteStore.put.mock.calls[0]![0];
+          expect(remoteObjects.get(objectKey)).toEqual(Buffer.from('hello'));
+          expect(mocks.registerOwnerMaterial.mock.calls[0]![1]).toMatchObject({
+            ossKey: objectKey,
+          });
+        }
+      } finally {
+        errorSpy.mockRestore();
+      }
+    },
+  );
 
   it('removes stored bytes before abandoning the reservation when finalize fails', async () => {
     mocks.finalizeOwnerMaterial.mockRejectedValue(new Error('finalize failed'));

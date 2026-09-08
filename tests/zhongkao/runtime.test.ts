@@ -18,6 +18,7 @@ import {
 } from '@/lib/zhongkao/runtime';
 import { confirmObservedField } from '@/lib/zhongkao/observed-field';
 import { createInitialStudentProfile } from '@/lib/zhongkao/profile';
+import { isServerOnlyRuntimeKind } from '@/lib/zhongkao/runtime-kinds';
 
 import { evaluatedStudyAttemptV2, NOW, studyAttempt, unassessedStudyAttemptV2 } from './fixtures';
 
@@ -27,19 +28,55 @@ beforeAll(() => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 
-function harness(): { store: RuntimeStore; nextId: () => string; now: () => string } {
+function harness(): {
+  store: RuntimeStore;
+  indexedDB: IDBFactory;
+  dbName: string;
+  nextId: () => string;
+  now: () => string;
+} {
+  const indexedDB = new IDBFactory();
+  const dbName = `zhongkao-runtime-${Math.random()}`;
   const store = new BrowserRuntimeStore({
-    indexedDB: new IDBFactory(),
-    dbName: `zhongkao-runtime-${Math.random()}`,
+    indexedDB,
+    dbName,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
   });
   let id = 0;
   let seconds = 0;
   return {
     store,
+    indexedDB,
+    dbName,
     nextId: () => `record-${++id}`,
     now: () => new Date(Date.parse(NOW) + seconds++ * 1000).toISOString(),
   };
+}
+
+async function rewriteSessionRow(
+  indexedDB: IDBFactory,
+  dbName: string,
+  sessionId: string,
+  rewrite: (row: Record<string, unknown>) => void,
+): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(dbName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction('sessions', 'readwrite');
+    const sessions = transaction.objectStore('sessions');
+    const request = sessions.get(sessionId);
+    request.onsuccess = () => {
+      const row = request.result as Record<string, unknown>;
+      rewrite(row);
+      sessions.put(row);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+  database.close();
 }
 
 function reverseRecordListing(store: RuntimeStore): RuntimeStore {
@@ -204,6 +241,32 @@ describe('zhongkao RuntimeStore adapter', () => {
       attempt,
       secondAttempt,
     ]);
+  });
+
+  it('fails closed when ordinary listing omits the canonical corrupt StudyAttempt session', async () => {
+    const h = harness();
+    const learnerKey = 'anon:fictional-device';
+    const deps = {
+      store: h.store,
+      learnerKey,
+      now: h.now,
+      mintRecordId: h.nextId,
+    };
+    const attempt = studyAttempt({ id: 'attempt-before-session-corruption' });
+    await saveStudyAttempt(attempt, deps);
+    const sessionId = zhongkaoRuntimeSessionId(
+      ZHONGKAO_RUNTIME_KINDS.studyAttempt,
+      attempt.profileId,
+      learnerKey,
+    );
+    await rewriteSessionRow(h.indexedDB, h.dbName, sessionId, (row) => {
+      row.createdAt = 'not-iso';
+    });
+
+    await expect(
+      h.store.listSessions(zhongkaoStageId(attempt.profileId), learnerKey),
+    ).resolves.toEqual([]);
+    await expect(loadStudyAttempts(attempt.profileId, deps)).rejects.toThrow(/createdAt/);
   });
 
   it('is idempotent for the same attempt and isolates profile ids', async () => {
@@ -469,14 +532,20 @@ describe('zhongkao RuntimeStore adapter', () => {
     );
   });
 
-  it('does not route per-problem coach events through the long-lived session helper', () => {
-    expect(() =>
-      zhongkaoRuntimeSessionId(
-        ZHONGKAO_RUNTIME_KINDS.coachEvent as never,
-        'student-alpha',
-        'anon:fictional-device',
-      ),
-    ).toThrow('ZHONGKAO_RUNTIME_KIND_INVALID');
+  it.each([ZHONGKAO_RUNTIME_KINDS.coachEvent, ZHONGKAO_RUNTIME_KINDS.examEvent])(
+    'does not route %s through the long-lived session helper',
+    (kind) => {
+      expect(() =>
+        zhongkaoRuntimeSessionId(kind as never, 'student-alpha', 'anon:fictional-device'),
+      ).toThrow('ZHONGKAO_RUNTIME_KIND_INVALID');
+    },
+  );
+
+  it('classifies Exam events as server-only without widening long-lived runtime helpers', () => {
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.examEvent)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.coachEvent)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.studyAttempt)).toBe(true);
+    expect(isServerOnlyRuntimeKind(ZHONGKAO_RUNTIME_KINDS.studentProfile)).toBe(false);
   });
 
   it('keeps all Zhongkao kinds in the shared validator table', async () => {
@@ -489,6 +558,7 @@ describe('zhongkao RuntimeStore adapter', () => {
     expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.coachEvent]).toBeTypeOf(
       'function',
     );
+    expect(APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.examEvent]).toBeTypeOf('function');
     const profile = createInitialStudentProfile({ profileId: 'student-alpha', createdAt: NOW });
     expect(
       APP_RUNTIME_PAYLOAD_VALIDATORS[ZHONGKAO_RUNTIME_KINDS.studentProfile]!(profile).valid,

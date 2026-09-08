@@ -2,7 +2,10 @@ import { isChatMessageSkeleton, isQuizAttemptSkeleton } from '@openmaic/dsl';
 import type { RuntimePayloadValidator } from '@openmaic/storage';
 
 import { whiteboardRuntimePayloadValidator } from '@/lib/whiteboard/runtime/validate';
+import { TEACHER_ANALYSIS_KIND, validateTeacherAnalysis } from '@/lib/teacher/analysis';
+import { TEACHER_STUDENT_ROSTER_KIND, validateTeacherRosterEvent } from '@/lib/teacher/students';
 import { validateCoachEvent } from '@/lib/zhongkao/coach-event';
+import { validateExamEvent } from '@/lib/zhongkao/exam-event';
 import { validateStudentProfile } from '@/lib/zhongkao/profile';
 import { ZHONGKAO_RUNTIME_KINDS } from '@/lib/zhongkao/runtime-kinds';
 import { validateStudyAttempt } from '@/lib/zhongkao/study-attempt';
@@ -40,12 +43,17 @@ const zhongkaoStudyAttempt: RuntimePayloadValidator = (payload) => validateStudy
 
 const zhongkaoCoachEvent: RuntimePayloadValidator = (payload) => validateCoachEvent(payload);
 
+const zhongkaoExamEvent: RuntimePayloadValidator = (payload) => validateExamEvent(payload);
+
 /** Complete app validator table. RuntimeStore options replace their defaults. */
 export const APP_RUNTIME_PAYLOAD_VALIDATORS = Object.freeze({
   chat,
   quizAttempt,
   whiteboard: whiteboardRuntimePayloadValidator,
+  [TEACHER_STUDENT_ROSTER_KIND]: validateTeacherRosterEvent,
+  [TEACHER_ANALYSIS_KIND]: validateTeacherAnalysis,
   [ZHONGKAO_RUNTIME_KINDS.studentProfile]: zhongkaoStudentProfile,
   [ZHONGKAO_RUNTIME_KINDS.studyAttempt]: zhongkaoStudyAttempt,
   [ZHONGKAO_RUNTIME_KINDS.coachEvent]: zhongkaoCoachEvent,
+  [ZHONGKAO_RUNTIME_KINDS.examEvent]: zhongkaoExamEvent,
 }) satisfies Readonly<Record<string, RuntimePayloadValidator>>;

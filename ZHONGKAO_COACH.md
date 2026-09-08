@@ -1,4 +1,4 @@
-# 2027 Zhongkao Coach: Milestones 1 through 2B-2A.1
+# 2027 Zhongkao Coach: Milestones 1 through M3A-1b
 
 This document describes the domain foundation for a single fictional learner
 using OpenMAIC locally or on a trusted private network. The only initialized
@@ -396,6 +396,74 @@ For this milestone, even a material-backed start uses the trusted current user
 message as the problem text. The verified material is optional explanation
 context, not a model-selected quote promoted to a trusted question. Reliable
 material quote-to-question extraction remains future work.
+
+### M3A-1a material storage safety contract
+
+All new material byte-store keys use one domain-separated SHA-256 namespace.
+Owner, Agent Session, and material identifiers are hashed in distinct domains
+before they become path segments; raw identifiers, including anonymous owner
+ids containing `:`, never enter a new filesystem or object-store key. The
+logical key is portable across Windows and Linux and is passed unchanged through
+the neutral byte-store abstraction. Existing pre-v1 owner keys remain readable
+because their recorded key stays authoritative. Existing session keys remain
+readable only when their legacy session segment is portable; new writes always
+use the v1 namespace. Anonymous-owner keys containing `:` could not have been
+written by the Windows local store, so there is no readable Windows legacy
+object to migrate.
+
+An owner material id identifies one owner-library original. Binding does not
+reuse that id as the globally keyed `agent_session_materials.id`. Instead, the
+server deterministically derives a distinct snapshot id from the trusted Agent
+Session id plus owner material id, copies verified bytes into that session's
+independent namespace, and writes session-scoped metadata. Rebinding is
+idempotent, concurrent identical writes converge on the same snapshot, and two
+sessions never share backing bytes. Before copying, the server verifies the
+target session owner, owner-scoped ready row, byte length, and stored SHA-256.
+
+Owner deletion uses tombstone, byte deletion, then metadata purge. A byte or
+purge failure retains a non-visible tombstone with its object pointer so the
+same deletion can retry. Existing session snapshots remain readable after the
+owner original is deleted. Asset-era owner rows whose migration cannot recover
+a byte-store locator are never returned as ready materials; the server does not
+invent a replacement key.
+
+Every Session byte write first persists a write claim containing the Session,
+logical material, object slot, and expected canonical key. Publishing bytes
+then holds the same Session row lock that deletion must acquire. A publisher
+that entered first settles its durable claim before deletion can tombstone the
+Session; a deletion that entered first prevents both new claims and byte writes.
+If publishing fails after the backend may have accepted the bytes, its durable
+claim remains available to cleanup. Creating or finalizing material metadata
+after a tombstone cannot make the Session visible again.
+
+Agent Session deletion is synchronous and drainable: it tombstones the Session,
+loads object keys from both material rows and outstanding write claims, removes
+those objects, and only then purges the rows and claims. Repeating the normal
+delete operation is the recovery entry point after a cleanup failure. Clearing
+the independent Session prefix remains defense in depth for older unclaimed
+objects, but correctness for new writes comes from the durable claim and
+tombstone fence. Cleanup refuses a recorded object key outside the exact
+Session namespace, and derivatives are constrained to a source in the same
+Session at the database layer.
+
+Canonical object keys, owner/session hash namespaces, local paths, and provider
+diagnostics are server-only. Material HTTP responses, tools, durable tool
+results, and SSE replay use closed projections containing logical material ids
+and closed extraction error codes. Historical free-form extraction errors map
+to a generic failure code at read time. Internal storage lookup continues to use
+the recorded locator without exposing it as an asset id.
+
+The repository pins Prettier-managed source and configuration formats to LF in
+`.gitattributes`. This keeps a fresh Windows checkout stable even when the
+user's global `core.autocrlf` is true; Markdown and YAML remain governed by the
+existing Prettier ignore policy, so the change does not introduce a repository-
+wide normalization commit.
+
+This contract is sufficient for a future server-only reference containing
+`{ownerMaterialId, sha256, mimeType, byteLength}`: the owner material can be
+resolved directly, re-authorized, and digest-verified without an Agent Session
+copy. M3A-1a does not create that Exam reference, an Exam upload route, an Exam
+runtime, extraction, OCR, diagnosis, Progress writes, or UI.
 
 ## Hint and full-solution generation
 
@@ -1078,3 +1146,799 @@ and terminal presentation have zero LLM dependency. The server triggers them
 automatically after transfer evaluation or during an authorized finalizing
 resume; no student answer is consumed again and no model action can mark a
 session complete or mastered.
+
+## Milestone 3A-1b immutable Exam intake
+
+M3A-1b introduces `ExamSession` as a long-lived domain that is separate from
+Coach events, StudyAttempt facts, Agent Session metadata, and
+KnowledgeProgress. Its only ready state is `ready_for_extraction`, meaning that
+the declared raw materials have been frozen and read back with matching byte
+lengths and SHA-256 digests. It does not mean that a PDF was parsed, a response
+was recognized, an answer was verified, grading occurred, or a diagnosis was
+produced.
+
+### Roles, identity, and authority
+
+An intake has exactly one `question_paper`, at most one `student_response`, and
+at most one `answer_key`, in that canonical order. These are user-declared
+document-role facts only. In particular, `answer_key` does not create a grading
+specification or authoritative answer, `student_response` does not confirm
+recognized student text, and `question_paper` does not confirm question
+structure or source attribution. M3A-1b performs no semantic read or model call
+over any document.
+
+The server derives the Exam id with a domain-separated SHA-256 digest over the
+owner-derived learner partition, profile id, bounded client request id, and
+Exam schema version. The client does not choose the owner, learner, stage,
+Exam-document ids, operation ids, event ids, object keys, digests, lengths, or
+status. Title is bounded display metadata and does not affect Exam identity;
+it does participate in the semantic request fingerprint, so replaying one
+request id with a changed title, subject, or document set is a conflict.
+Document order in the request does not affect identity or replay.
+
+The dedicated API reuses the trusted request owner, derives the learner key,
+and requires an existing profile in that partition before intake. Exam events
+use the server-only `zhongkaoExamEvent` RuntimeStore kind. This kind is
+deliberately excluded from the generic Zhongkao long-lived helper and from all
+generic persistence HTTP create, discovery, read, append, status, and delete
+surfaces. Only the dedicated Exam service and `POST/GET/DELETE
+/api/zhongkao/exams` routes can access it.
+
+### Immutable snapshots and intake saga
+
+Every source is re-resolved as an active, ready, same-owner source material.
+The source row is locked against deletion while the byte object is read and
+its actual length and SHA-256 digest are compared with durable metadata. A
+snapshot read that obtains the row lock first may finish from its captured
+buffer; a deletion that tombstones first makes a new intake fail closed.
+
+Snapshot objects use a separate non-reversible namespace:
+
+```text
+materials/v1/exams/exm_<sha256>/doc_<sha256>/raw
+```
+
+Raw owner, profile, Exam, material, title, and filename values never become
+path segments. Each `examDocumentId` is a deterministic digest of the Exam id,
+role, and document schema version. The intake sequence is fixed:
+
+1. authorize and verify every owner source;
+2. append `exam_created` as the immutable intake plan;
+3. write each deterministic snapshot key and read it back;
+4. append one `exam_document_snapshotted` fact per verified object;
+5. recheck every object and append `exam_intake_completed`.
+
+`exam_created` therefore precedes every new Exam byte. An existing matching
+object recovers a bytes-before-event crash without another write; an existing
+different object is a document conflict and is never overwritten. A durable
+snapshot event whose object is missing or different is integrity failure, not
+permission to recreate an authoritative fact. Replays resume one logical Exam,
+one deterministic object per declared role, and one deterministic operation
+per logical event. The RuntimeStore session remains active after intake so a
+later delete can append its lifecycle facts.
+
+A database advisory mutation lock serializes all intake and delete callbacks
+for one Exam. The advisory lock uses a small dedicated connection pool, so a
+callback can use the existing provider pool without exhausting that pool with
+its own outer locks. This prevents a stale intake writer from putting bytes
+after a delete sweep. RuntimeStore compare-and-append remains the durable event
+CAS; the byte store and RuntimeStore are intentionally joined by the
+recoverable saga rather than represented as one false cross-store transaction.
+
+### Independence, server resolver, and public data
+
+Exam snapshots are owned by the Exam lifecycle. They do not point at owner raw
+objects or Agent Session snapshots. Deleting the original OwnerMaterial or an
+Agent Session after intake cannot remove or invalidate a ready Exam. A future
+server pipeline may call the server-only Exam snapshot resolver, which reloads
+and folds the private history, checks owner/learner/profile partition facts,
+derives the exact key, reads the object, and verifies its digest and length.
+M3A-1b exposes no generic raw download route and sends no Exam bytes to an
+Agent, tool, SSE stream, transcript, Skill, extractor, or model.
+
+The public DTO contains only Exam/profile/subject identity, optional title,
+ingestion status, creation time, and per-document id, declared role, safe
+display name, MIME type, length, and snapshot status. It excludes owner and
+learner identities, owner material ids, client request ids, digests, object
+keys, filesystem paths, RuntimeSession ids, event or operation references,
+claims, leases, answer content, grading facts, and verification claims.
+
+### Delete, bounds, and stopping point
+
+Deletion appends `exam_delete_requested`, deletes every exact key derivable
+from the immutable plan (including bytes written before a missing snapshot
+event), optionally sweeps only that hashed Exam prefix, verifies absence, and
+then appends `exam_deleted` while completing the RuntimeStore session. A crash
+or byte-store failure leaves `deleting` and is retryable; repeated DELETE is
+idempotent. Private RuntimeStore history is retained and is never deleted as
+the first lifecycle step. Missing, foreign, malformed, and deleted Exam reads
+share not-found semantics, and public errors never contain locators, digests,
+paths, or raw causes.
+
+The first intake is limited to one to three supported documents, 50 MiB per
+document, and 50 MiB total. Supported storage MIME declarations are PDF, PNG,
+JPEG, WebP, and plain text; accepting bytes does not assert that a later
+extractor can recognize them. Existing owner-material quota accounting does
+not include independent Exam copies, so a unified cross-Exam storage quota is
+explicit follow-up work. The per-Exam caps close this milestone's unbounded
+single-request copy path without introducing a second quota database.
+
+M3A-1b adds no OCR, PDF or region extraction, question matching, response
+recognition, answer authority, grading, knowledge-point mapping, observation,
+diagnosis, recommendation, StudyAttempt write, Progress mutation, Coach
+behavior, UI, upload system, production dependency, or LLM call. M3A-2 may
+consume only bytes returned by the verified server snapshot resolver and must
+define its own extraction and semantic-authority contracts.
+
+## Milestone 3A-2A text-native Exam question extraction
+
+M3A-2A reads only the verified immutable `question_paper` snapshot of a ready
+Exam. The first adapter accepts `application/pdf` and requires a usable native
+text layer. It opens the PDF with local `unpdf`/PDF.js, streams each page's text
+content, and reads one page at a time without ever materializing or merging all
+pages, so the PDF page index is
+the source of `pageNumber` and each page retains its own ordered text blocks.
+Page objects are cleaned up before the next page is read, and page, item, block,
+text, candidate, diagnostic, and serialized-byte limits are enforced. The
+adapter has no stable bounding-box, formula-node,
+table-node, or image-marker contract; those fields are omitted rather than
+fabricated. A PDF without enough extractable text fails with a stable
+text-extraction-unavailable error. There is no OCR, vision, cloud provider, or
+model fallback.
+
+### Versioned derivatives and recovery
+
+The raw Exam snapshot remains the only source authority. Extraction creates
+two separate Exam-owned JSON derivatives beneath the same hashed Exam/document
+namespace: a versioned document artifact and a separately versioned question
+candidate artifact. Both have closed schemas and deterministic canonical JSON.
+Neither large payload is stored in RuntimeStore events or exposed through the
+public Exam DTO.
+
+The event stream records an extraction plan before document bytes and a
+segmentation plan before candidate bytes. Each completed fact contains only
+bounded algorithm/version identifiers, opaque deterministic references,
+source fingerprints, byte length and SHA-256 integrity facts, plus page or
+candidate counts. Writes use deterministic exact keys, read back the object,
+and verify bytes and closed schema before appending completion. A retry after a
+bytes-before-event crash recomputes the deterministic result and requires an
+exact match. Once a completion fact exists, missing or changed bytes are
+corruption and are never silently regenerated.
+
+Extraction and deletion share the per-Exam mutation lock. Delete removes raw
+snapshots and every derivative key derivable from persisted plans before the
+Exam becomes deleted. A delete that linearizes first prevents extraction from
+writing; extraction that finishes first is fully reclaimed by the following
+delete. No deleted Exam can be restored by a late extraction event.
+
+### Artifact and candidate semantics
+
+`ExamDocumentArtifactV1` preserves source fingerprint, MIME type, actual page
+count, page order, page-local block order, and source text. Normalization is
+limited to stable Unicode, line-ending, and bounded whitespace handling that
+does not rewrite mathematical meaning. Page dimensions and bounding boxes are
+absent when the extractor does not supply a reliable coordinate contract.
+
+The deterministic segmenter detects section headings separately from question
+markers, normalizes full-width digits and punctuation for matching while
+retaining each raw label, and represents a locator as section path, printed
+number, and subquestion path. Parent questions with `(1)`, `(2)`, and similar
+children become a group plus leaf candidates; shared parent text remains
+traceable rather than being copied as invented child content. Every candidate
+has page/block source spans, and an active question may continue across pages.
+Candidate text is derived only from those spans.
+
+Duplicate normalized locators remain as separate ambiguous candidates; the
+system never chooses the first occurrence. Gaps, orphan subquestions, empty or
+oversized bodies, duplicate locators, and low text coverage produce closed
+structural diagnostics and qualitative confidence bands, not probabilities.
+The resulting records are `ExamQuestionCandidate` facts, not confirmed
+questions. They contain no correct answer, grading specification, knowledge
+point, difficulty, diagnosis, or student-performance conclusion.
+
+The dedicated extraction endpoint accepts either no body or the closed JSON
+object `{}` and lets
+the server select the question-paper document and frozen algorithms. Public
+Exam detail may expose only extraction status, page count, candidate count, and
+whether structural review is needed. Server-only resolvers reauthorize the
+owner/profile partition and verify derivative length, digest, schema, source
+fingerprint, and deterministic reference before returning structured data.
+There is no public raw artifact or candidate endpoint in this milestone.
+
+M3A-2A never resolves or reads `answer_key` or `student_response` bytes and
+never imports an Agent runner, Skill, `AICallFn`, model provider, or model SDK.
+It performs no answer matching, grading, diagnosis, KnowledgeProgress or
+StudyAttempt mutation, Coach behavior, or UI work. A later M3A-2B may consume
+verified candidates, while confirmation and semantic authority remain a later
+human-review milestone.
+
+## Milestone 3A-2B structured student responses and deterministic matching
+
+M3A-2B accepts one immutable set of manually entered response candidates for an
+Exam through the closed `numbered_text_v1` grammar. Each non-empty input line is
+either a recognized section heading or `<question label>=<one-line answer>`.
+Only the first equals sign is a delimiter, so `17(1)=x=2` preserves `x=2` as
+the answer. Blank answers are persisted as candidate facts with
+`answerStatus=blank`; blank never means incorrect or any other grading outcome.
+Answer text is retained exactly and is not case-folded, corrected, simplified,
+evaluated, unit-normalized, or sent to a model.
+
+Response labels and section headings use the same versioned locator parser as
+M3A-2A question candidates. A `StudentResponseCandidate` remains a candidate,
+not a confirmed student response. Its deterministic identity uses the Exam,
+capture version, normalized locator, and canonical duplicate ordinal. Input
+order does not change the semantic candidate set, while repeated locators are
+never deduplicated: every repeated entry remains visible as an ambiguity even
+when the repeated answer text is identical.
+
+Matching consumes only the owner-authorized, integrity-verified M3A-2A question
+candidate artifact. A section-qualified response requires exact normalized
+section, printed-number, and subquestion-path equality. Without section
+context, a response may match only when its printed number and subquestion path
+identify one leaf candidate across the entire Exam. A group with children
+cannot absorb a top-level response. Duplicate question locators, duplicate
+response locators, and every other non-unique structural result remain
+`ambiguous`; no acceptable candidate yields `unmatched`; exactly one acceptable leaf is
+`matched`. Confidence, question text, answer text, page order, array order,
+fuzzy distance, embeddings, and model inference never break a tie. `matched`
+means only a deterministic candidate-to-candidate locator relationship. It
+does not mean confirmed, correct, authoritative, or grading-ready.
+
+The response-candidate and question-response-match sets are separate canonical
+JSON artifacts in the private Exam namespace. A capture-start event durably
+records their deterministic plan before either object is written. Subsequent
+events record only bounded versions, opaque references, source fingerprints,
+integrity facts, and counts; raw answers never enter RuntimeStore events. Both
+artifacts are written to exact deterministic keys, read back, schema-checked,
+and bound to the exact question-candidate artifact digest and segmentation
+version. Retries recover deterministically from bytes-before-event and
+committed-response-loss failures, while different facts for the single v1
+capture conflict instead of overwriting history.
+
+Response capture and Exam deletion use the same per-Exam mutation lock. Delete
+removes both response derivatives in addition to snapshots and question
+extraction artifacts, including artifacts left by a partial capture. Public
+Exam detail exposes only capture status, matched/ambiguous/unmatched counts,
+and `needsReview=true`. Raw answers, locators, candidate ids, object keys,
+digests, fingerprints, operation ids, event ids, and RuntimeSession identities
+remain server-only. Dedicated resolvers exist for a future owner-authorized
+M3A-3 review workflow; M3A-2B adds no confirmation endpoint or UI.
+
+M3A-2B never reads the `student_response` snapshot or the `answer_key` snapshot.
+It performs no OCR, answer-key interpretation, grading, correctness inference,
+knowledge-point mapping, diagnosis, StudyAttempt write, KnowledgeProgress
+mutation, Coach behavior, LLM/provider/runner/Skill call, or dependency change.
+Human confirmation and review remain M3A-3 work.
+
+## Milestone 3A-3 Human Confirmation Gate
+
+M3A-3 adds a dedicated owner-authorized review boundary after question
+extraction and deterministic response matching. An `ExamQuestionCandidate`, a
+`StudentResponseCandidate`, and a `QuestionResponseMatch` remain immutable
+machine or capture facts. High confidence, a unique match, and an observed
+blank never promote themselves to confirmed facts. Only one explicit,
+complete owner review POST can create the independent confirmed overlay.
+
+The review GET rebuilds its bundle from the validated Exam Runtime and the
+integrity-checked question, response, and matching artifacts on every request.
+It may show logical candidate ids, source spans, original question and answer
+text, structural diagnostics, and the effective confirmed overlay because it
+is an owner-only review surface. It never returns object keys, digests,
+RuntimeSession ids, events, operations, learner or owner partitions, or local
+paths. The ordinary Exam DTO exposes only `not_started`, `confirming`, or
+`confirmed` plus confirmed and rejected counts after completion.
+
+### Full-set decisions and provenance
+
+Review v1 accepts a closed, bounded full decision set. Every question
+candidate is explicitly resolved. A leaf may be confirmed, corrected and
+confirmed, or rejected; a group can only be explicitly rejected and remains
+context for its leaf children. Every response candidate is confirmed against
+one confirmed leaf, corrected and linked to one leaf, or rejected. Every
+confirmed question has exactly one confirmed response or one explicit
+`no_response` fact. No response can be reused, and final confirmed locators
+must be unique.
+
+Question and answer corrections are overlays. They preserve the source
+candidate id and never overwrite extracted text, raw captured answers, source
+spans, or the machine match. Corrected labels and optional section headings
+are parsed by the shared deterministic locator logic. Corrected text is stored
+exactly within fixed limits and is not normalized, simplified, evaluated, or
+rewritten by a model. Question provenance distinguishes
+`extracted_confirmed` from `owner_corrected`; answer provenance distinguishes
+`captured_confirmed`, `owner_corrected`, and `owner_no_response`.
+For a confirmed leaf with a group parent, the private confirmed fact also
+retains the parent's validated source id, locator, exact extracted text, and
+source spans as `extracted_confirmed` context. The parent remains non-gradable,
+but the confirmed-facts resolver therefore supplies the complete question
+context without bypassing the confirmation gate to reread raw candidates.
+
+`blank` means a response candidate exists and its empty answer field was
+explicitly confirmed. `no_response` means the owner explicitly confirmed that
+no response candidate was observed for that question. Neither is incorrect,
+skipped, zero points, or any other grading result. A unique deterministic
+candidate match confirmed by the owner records
+`deterministic_match_confirmed`. Selecting a target for an ambiguous or
+unmatched candidate records `owner_manual_link`; it is an explicit human
+assertion, not fuzzy inference. Rejected candidates remain present in their
+immutable source artifacts and have closed rejection reasons in the private
+review facts.
+
+### Confirmed facts, persistence, and recovery
+
+The private `ConfirmedExamReviewFactsV1` artifact binds the exact question
+extraction and segmentation versions, response capture version, matching
+version, all three source artifact references and SHA-256 facts, the review
+version, and a separate canonical human-decision fingerprint. Confirmed
+question, response, and relation ids are server-derived domain-separated
+hashes. The artifact contains the canonical decisions, confirmed facts, and
+rejections, but no correctness, score, answer-key, grading, knowledge-point,
+diagnosis, outcome, or mastery field.
+
+The event stream records `exam_human_review_started` before review artifact
+bytes. The started event contains only bounded versions, opaque references,
+source fingerprints, and the decision fingerprint. The service then writes
+canonical `confirmed_review_facts_v1.json` bytes to a deterministic private
+Exam key, reads them back, and verifies exact bytes before appending
+`exam_human_review_completed` with digest, length, and counts. Raw questions,
+answers, corrections, and decisions never enter RuntimeStore events.
+
+A retry after a started-event crash continues the same plan. A retry after
+artifact bytes but before the completed event verifies the deterministic
+bytes and appends completion. A retry after committed response loss returns
+the same confirmed summary. The same full decision set replays; a different
+decision set or changed source binding conflicts and never overwrites review
+v1. Review and deletion share the per-Exam mutation lock. Delete removes the
+review key as soon as a started plan exists, including a partial artifact left
+before completion, and no deleted Exam can be resurrected by late review work.
+
+The server-only `resolveConfirmedExamReviewFacts` function is the sole future
+M3B question, response, and relation authority. It reauthorizes the owner and
+profile partition, requires confirmed review state, verifies object length and
+digest, parses the closed schema, revalidates all current source bindings,
+recomputes deterministic ids and the complete overlay, and fails closed on
+any mismatch. M3B must not bypass this gate by selecting directly from raw
+question candidates, response candidates, or machine matches.
+
+M3A-3 does not read the `answer_key` snapshot or the `student_response`
+snapshot. It adds no answer-key extraction, OCR, vision, fuzzy matching,
+grading, correctness, score, knowledge mapping, diagnosis, ExamObservation,
+StudyAttempt or KnowledgeProgress mutation, Coach behavior, UI, LLM, provider,
+runner, Skill, production dependency, or database schema.
+
+## Milestone 3B-1A authoritative manual answer key and deterministic grading
+
+M3B-1A is the first Exam milestone allowed to derive `correct`, `incorrect`,
+or `unassessed`. Its only question and student-response authority is the
+integrity-checked `ConfirmedExamReviewFactsV1` returned by the server-only
+confirmed-review resolver. Production grading does not read question,
+response, or match candidates directly and does not infer an answer from
+question text.
+
+The owner-authorized `POST /api/zhongkao/exams/{examSessionId}/answer-key`
+accepts one closed, complete manual key v1. Every confirmed question has
+exactly one entry: a supported objective grading decision or the explicit
+closed `unsupported_question_type` decision. Duplicate or omitted question
+ids reject the entire request. Entries are canonicalized independently of
+request order and bind the exact confirmed-review artifact, its version and
+fingerprint, and the final `confirmedQuestionId`; locator strings and source
+candidate ids are not grading identities.
+
+An accepted manual key has authority source `owner_confirmed_manual_key`. It
+is authoritative for deterministic grading inside this Exam, but it is not a
+verified official examination answer source. M3B-1A never reads an uploaded
+`answer_key` snapshot. A later answer-key extraction milestone may create
+candidates, but those candidates cannot acquire authority without a separate
+confirmation and provenance boundary.
+
+### Objective grading v1
+
+`exam-objective-grading:v1` supports only `single_choice`,
+`multiple_choice`, `numeric`, and `exact_short_answer`. It reuses the existing
+server-only Zhongkao grading-spec validation, choice comparison, exact decimal
+parsing, and bounded exact-answer normalization. Choice ids use a frozen
+canonical A-F universe without inspecting question text. Multiple-choice
+comparison is exact-set and order independent; the Exam v1 adapter also
+recognizes a compact sequence such as `AC` without changing the default Coach
+evaluator policy. Numeric keys are accepted as decimal strings only when they
+can be represented by the existing exact numeric contract without a lossy
+conversion. Expressions such as `1/2` or `1+2` are never executed. Exact short
+answers match only the owner-listed strings after the existing controlled
+Unicode, whitespace, and subject-owned case normalization.
+
+For an objective key, a confirmed text response is evaluated by that frozen
+deterministic algorithm. A confirmed `blank` or explicit `no_response` has no
+correctness meaning at the M3A-3 review layer, but once an authoritative
+objective key exists it deterministically evaluates as `incorrect` because no
+matching answer was supplied. An `unassessed` key remains unassessed regardless
+of response content and never produces correctness. There is no `skipped`
+inference, partial credit, score, fuzzy comparison, regex, semantic model
+grading, error-type inference, or knowledge-point mapping.
+
+### Private artifacts, events, and recovery
+
+The private `authoritative_answer_key_v1.json` artifact contains the canonical
+manual decisions, server-derived private grading specifications, exact source
+review binding, deterministic entry references, manual-authority provenance,
+and semantic fingerprint. Expected answers, accepted alternatives, numeric
+internals, and normalization policy stay in this server-only artifact. The
+separate `exam_question_assessments_v1.json` artifact binds the exact review,
+answer-key artifact and algorithm version and contains one closed evaluated or
+unassessed result for every confirmed question. It contains response and key
+entry references, never raw answer text or a score.
+
+The Exam stream appends `exam_answer_key_started` before key bytes and
+`exam_grading_started` before assessment bytes. Completed events record only
+versions, opaque references, source fingerprints, integrity facts, and counts;
+they never contain the manual key, private grading specs, raw student answers,
+or per-question outcomes. Both artifacts use deterministic private Exam keys,
+canonical serialization, immutable same-bytes replay, read-back length and
+SHA-256 verification, and closed-schema/source-binding validation.
+
+The same owner-authorized POST runs key confirmation and grading as one
+recoverable saga under the per-Exam mutation lock. Retries continue after a
+started-event crash, bytes-before-completed interruption, RuntimeStore CAS
+loss, or committed-response loss. A different v1 key conflicts and cannot
+overwrite prior facts. Exam deletion removes both exact artifact keys,
+including bytes left by a partial operation; delete/key and delete/grading
+races cannot resurrect a deleted Exam.
+
+Ordinary Exam detail exposes only grading status and aggregate evaluated,
+correct, incorrect, and unassessed counts. It does not expose expected answers,
+accepted-answer sets, raw responses, per-question outcomes, object keys,
+digests, operation ids, event ids, or RuntimeSession identities. Generic
+Runtime access remains blocked for the server-only Exam event kind. M3B-1A
+adds no LLM, provider, runner, Skill, OCR, vision, embedding, score,
+ExamObservation, StudyAttempt, KnowledgeProgress, Coach, UI, dependency, or
+database-schema change.
+
+Future M3B-2 code may consume question and response facts only through the
+confirmed-review resolver and correctness only through
+`resolveExamQuestionAssessments`. It must not re-grade raw responses, read a
+candidate answer key, ask a model to change an outcome, infer an error type, or
+update progress without the later explicit projection contract.
+
+## Milestone 3B-2A confirmed knowledge mapping and Exam evidence
+
+M3B-2A adds one explicit owner-authorized knowledge mapping after human review
+and deterministic grading have completed. The closed full-set mapping request
+resolves every confirmed question as either `mapped` with one or more bounded,
+unique `knowledgePointIds`, or `unmapped` with a closed reason. Correctness,
+question text, response text, candidate confidence, and grading type never
+create a knowledge-point mapping. The client cannot submit an outcome,
+assessment status, profile, subject, mastery state, or error type.
+
+The only mapping authority is `owner_confirmed_manual_mapping`. It means the
+current owner explicitly selected these application-local identifiers for this
+Exam. The repository still has no complete official Zhongkao taxonomy catalog,
+so the mapping does not claim official curriculum membership, textbook
+membership, regional-exam scope, or expert verification. Existing identifier
+validation proves only that an id is non-empty, trimmed, bounded, control-safe,
+and unique within the entry. An `unmapped` decision remains an explicit fact;
+the system never invents an `unknown` knowledge-point id.
+
+### Confirmed Exam observations
+
+`ConfirmedExamObservationV1` is an independent domain fact, not a synthetic
+`StudyAttempt`. It never fabricates `attemptKind`, help exposure, prior-attempt,
+answer-view, independence, or Coach lifecycle facts. Each mapped confirmed
+question receives one deterministic observation bound to the exact confirmed
+review, question assessment, and confirmed mapping. An evaluated observation
+copies only `correct` or `incorrect` from `ExamQuestionAssessments`; an
+unassessed observation copies only the closed unsupported-question reason.
+Unmapped questions produce no Progress observation.
+
+Observation and occasion identities are server-derived domain-separated
+hashes. `observedAt` is the durable Exam creation time, not a retry or projection
+time. Every observation from one Exam uses the same Exam occasion identity.
+For one knowledge point, any number of incorrect questions in the same Exam
+therefore contributes exactly one negative occasion. A question mapped to two
+knowledge points can contribute to both, while a second incorrect question for
+either point in the same Exam does not create another occasion. A correct
+question in the same Exam never cancels an incorrect question.
+
+An authoritative Exam correct is useful observed evidence but is never an
+independent transfer or review correct. Exam correct observations cannot by
+themselves satisfy the two-independent-correct recovery rule or produce
+`developing` or `stable`. A mapped unassessed observation is retained for audit
+but supplies neither positive nor negative correctness evidence.
+
+### Progress evidence and conservative aggregation
+
+`ProgressEvidence` is a closed union of real `StudyAttempt` facts and confirmed
+Exam observations. The existing StudyAttempt schema, predicates, counting,
+partial/skipped behavior, and ordering remain unchanged. StudyAttempt-only
+calls to `deriveKnowledgeProgress` retain their existing output and semantics.
+The evidence-aware derivation groups only Exam observations by Exam occasion
+and knowledge point; it does not regroup StudyAttempts.
+
+One incorrect Exam occasion yields `needs_observation`, not `weak`. Two durable
+negative occasions, including one real StudyAttempt error plus one Exam error
+or errors from two separate Exams, may yield `weak`. Two recent independent
+Coach transfer/review successes can still move a weak point to `developing`.
+Ordinary Exam correct observations never impersonate that recovery evidence.
+`stable` remains reserved and is not automatically produced. Progress remains
+a pure projection over currently available evidence; no Exam event persists a
+weak, developing, stable, mastered, independent, score, or error-type claim.
+
+### Private artifacts, recovery, and deletion
+
+The canonical `confirmed_exam_knowledge_mapping_v1.json` artifact binds the
+Exam, profile, subject, confirmed-review fingerprint, assessment fingerprint,
+mapping version, manual authority, complete canonical decisions, and semantic
+fingerprint. The separate `confirmed_exam_observations_v1.json` artifact binds
+that mapping plus the exact review and assessment sources and contains the
+complete deterministic observation set. Both remain private Exam-owned
+artifacts with deterministic keys, closed schemas, immutable same-bytes replay,
+and read-back length, SHA-256, canonical-byte, source, identity, and coverage
+verification.
+
+The Exam stream records `exam_knowledge_mapping_started` before mapping bytes,
+then `exam_knowledge_mapping_confirmed`; observation projection records
+`exam_observation_projection_started` before observation bytes, then
+`exam_observations_projected`. Events contain only bounded versions, opaque
+references, source fingerprints, integrity facts, and counts. They never store
+knowledge-point arrays, per-question outcomes, raw questions, raw responses,
+answers, or private artifact contents. Retries recover from every started-event,
+bytes-before-completion, CAS, and committed-response-loss boundary. The same
+semantic v1 mapping replays, while different facts conflict instead of
+overwriting history.
+
+Mapping, projection, collection, and deletion use the existing per-Exam
+mutation boundary. Delete removes both new deterministic artifact keys,
+including partial bytes left after a started event. A deleting or deleted Exam
+does not participate in Progress, so recomputation removes its evidence and a
+late mapping or projection cannot resurrect it.
+
+Profile-wide collection stays server-only. It first loads the existing
+owner-scoped StudyAttempt stream, then requires strict Exam enumeration in the
+same learner/profile partition. The strict selector recognizes both the
+`zhongkaoExamEvent` kind and the reserved `zhongkao-exam:` session-id namespace,
+so damage to either field cannot silently hide an otherwise recognizable Exam.
+A malformed relevant envelope or native-row binding fails as
+`EXAM_EVENT_CONFLICT`; an unavailable strict capability or failed base
+enumeration fails as `EXAM_SESSION_CONFLICT`. Unrelated runtime kinds and other
+owner/profile partitions remain outside that authority scope.
+
+Every valid selected Exam history is folded before lifecycle filtering and
+every source-bound observation artifact is revalidated. Incomplete and deleting
+Exams contribute nothing, and only a valid folded deleted Exam is excluded;
+corruption never becomes deleted, unmapped, unassessed, or an empty observation
+set. The generic `RuntimeStore.listSessions` omission contract remains
+unchanged for its existing callers. StudyAttempt loading retains its canonical
+owner/profile session-id fallback to fail-loud direct reads. No parallel
+observation runtime or database schema is introduced.
+
+Ordinary Exam detail and the mapping POST expose only mapping/projection status
+and aggregate counts. Knowledge-point decisions, observations, outcomes,
+artifact locations, digests, event or operation references, owner and learner
+partitions, raw student responses, grading specifications, and answer-key facts
+remain private. M3B-2A adds no automatic knowledge mapping, error diagnosis,
+LLM, provider, embedding, OCR, vision, score, StudyAttempt write, Coach change,
+UI, production dependency, or database migration.
+
+## Milestone 3B-2B review-only AI knowledge suggestions
+
+M3B-2B adds AI-generated knowledge-point suggestions as candidate-only review
+material. A suggestion is neither a knowledge mapping nor a taxonomy fact. It
+does not confirm that a question belongs to a knowledge point, and it never
+becomes authoritative because of confidence, repetition, model output, or a
+successful generation request. The M3B-2A closed full-set
+`owner_confirmed_manual_mapping` request remains the only knowledge-mapping
+authority.
+
+### Grounded input and taxonomy boundary
+
+The model receives only each confirmed leaf question's `questionText` and, when
+present in the confirmed review, its bounded parent `questionText`. Both come
+from `resolveConfirmedExamReviewFactsFromRuntime`; extraction candidates and
+unconfirmed text are not generation authority. The model does not receive the
+student response, correctness, assessment outcome, answer key, grading facts,
+score, mastery, KnowledgeProgress, StudyAttempt independence, help exposure, or
+error-type facts.
+
+The repository still has no complete official Zhongkao taxonomy. The bounded
+candidate pool therefore contains only application-local knowledge-point ids
+already observed in the same owner's profile and subject evidence. When that
+pool is non-empty its mode is `observed_existing_ids`; when no such ids exist,
+the mode is `label_only`. The pool does not imply official, regional,
+publisher, textbook, chapter, syllabus, or exam-scope coverage. A
+`proposed_label` is neutral review text, not a trusted id, and cannot be written
+to M3B-2A as though the system had created or verified a taxonomy entry. A
+`confidenceBand` is only an uncalibrated qualitative label (`high`, `medium`,
+or `low`), never a probability or an authority signal.
+
+Every returned evidence phrase must be an exact substring of the confirmed
+leaf question or its confirmed parent context. Evidence grounding does not
+upgrade a candidate to a fact. The generator requests one closed structured
+JSON result for every opaque request key. It accepts only the complete trimmed
+provider response through native `JSON.parse`: prose or reasoning prefixes,
+Markdown fences, partial extraction, and JSON repair are rejected. The closed
+TypeBox schema then rejects unknown fields, missing or duplicate keys, ids
+outside the observed pool, unsupported labels, and ungrounded evidence. The
+pipeline never requests or stores chain-of-thought. Question and parent-context
+text are explicitly treated as untrusted data rather than instructions, so
+embedded prompt-injection text cannot change the schema, authority boundary,
+source set, or accepted identifiers.
+
+Provider and model selection stay behind the existing server-only model-route
+boundary. Each provider call requests at most 32,768 output tokens, further
+bounded by a smaller configured model output window. The completed raw response
+also has a 256 KiB post-response validation limit. Provider ids, model ids,
+credentials, prompts, raw model responses, usage details, and diagnostics are
+not stored in the suggestion artifact or Exam events and are not returned by
+the API. The dedicated owner-scoped suggestion route uses `private, no-store`;
+ordinary Exam detail exposes only `not_started`, `processing`, `completed`, or
+`superseded` plus completed aggregate question and suggestion counts.
+
+### Persistence, replay, concurrency, and deletion
+
+Generation first appends `exam_knowledge_suggestions_started` under the
+existing per-Exam mutation lock. The provider call then runs outside that lock.
+Finalization reacquires the lock, validates the unchanged Exam, review, pool,
+generator, and deterministic references, writes the canonical immutable
+`exam_knowledge_suggestions_v1.json` artifact, verifies its exact read-back
+bytes, length, SHA-256, closed schema, source lineage, coverage, and counts, and
+only then appends `exam_knowledge_suggestions_completed`. Runtime events contain
+only bounded versions, subject and pool mode, opaque references, source and
+pool fingerprints, integrity facts, and aggregate counts; they contain no
+question text, evidence phrases, candidate ids or labels, responses, answers,
+outcomes, or storage keys. The private artifact likewise does not duplicate
+question or parent-context text. Its question ids and evidence are bound to the
+immutable confirmed-review source and fingerprints; the dedicated owner GET
+resolves that review and joins its exact question and parent-context text into
+the review DTO.
+
+Model generation may be non-deterministic before any artifact is committed. A
+started operation with no artifact may call the model again, but the first
+valid artifact accepted under the same immutable plan becomes the durable
+result. Retries with committed bytes revalidate and complete that artifact
+without another model choice; completed requests replay the same source-bound
+bytes. Plan drift, conflicting bytes, forged references, corrupt artifacts,
+CAS loss, and committed-response loss fail closed or recover only after exact
+read-back proves the same operation won.
+
+Concurrent identical calls share one in-process generation flight, while the
+existing cross-request Exam mutation fence serializes started, artifact,
+completion, mapping, and deletion transitions. Manual mapping remains available
+when suggestion generation is in progress: its authoritative mapping event
+marks the unfinished suggestion state `superseded`, and any late model
+finalization is rejected. This prevents provider failure from turning optional
+AI assistance into an authority gate. Delete removes the deterministic
+suggestion key as soon as a started fact exists, including bytes left before
+completion. A deleting or deleted Exam rejects late finalization, so an unlocked
+provider call cannot resurrect either the artifact or the Exam.
+
+The production POST propagates `req.signal` to the model call. If the client
+aborts before commit, generation stops without a false artifact or completed
+event; the durable started reservation remains and a later POST can retry it.
+
+Suggestions are not consumed by the knowledge-mapping reducer, observation
+projection, or Progress evidence collector. M3B-2B performs no automatic
+knowledge mapping, automatic owner confirmation, ExamObservation creation,
+KnowledgeProgress update, StudyAttempt write, Coach behavior change, correctness
+change, or error diagnosis. Any future error-diagnosis work remains reserved
+for M3B-2C and requires its own explicit evidence and authority contract; no
+M3B-2C behavior is introduced here.
+
+## Milestone 3B-2C reviewable observable error candidates
+
+M3B-2C creates `ExamErrorDiagnosisCandidate` review material for objective
+questions whose current authoritative `ExamQuestionAssessment` is
+`evaluated/incorrect`. A candidate is not a diagnosis, confirmed observation,
+grading fact, knowledge fact, Progress signal, or statement about the learner.
+Correct and unassessed questions are excluded before detection or model input.
+The milestone does not implement confirmed error authority; a later, separate
+human error review gate is required before any candidate could become a trusted
+error observation.
+
+### Authoritative sources and observable rules
+
+Question and response facts come only from the immutable
+`ConfirmedExamReviewFacts` artifact. Correctness comes only from the immutable
+`ExamQuestionAssessments` artifact. When an expected-versus-actual comparison
+is necessary, the server resolves the private owner-confirmed grading artifact
+and uses only the relevant per-question specification. Extraction candidates,
+raw PDF bytes, unconfirmed matches, generated answer keys, model output, and
+historical learner state are never correctness or diagnosis sources.
+
+The versioned deterministic detector does not re-grade. After the persisted
+assessment has admitted an incorrect question, it reuses the grading parser and
+canonical decimal representation solely to derive observable mismatch facts.
+Its closed v1 candidates are blank response, no response, unsupported response
+format for the selected objective grader, single-choice option mismatch,
+multiple-choice set mismatch, opposite numeric sign, and other numeric value
+mismatch. A valid but non-matching exact short answer produces
+`no_suggestion`; static text does not prove a concept error or incomplete
+answer. A contradiction between the persisted assessment and the reconstructed
+mechanical facts is source corruption and fails closed rather than changing the
+grade.
+
+Arithmetic process, completeness, expected units, and cognitive causes are not
+present in the current grading contract. The schema therefore contains no
+carelessness, rushing, time pressure, anxiety, stress, attention, focus,
+motivation, memory, intelligence, ability, personality, concept-understanding,
+mastery, weakness, study-effort, or reading-error label. An invalid expression
+such as `1/2`, `1+2`, or a number followed by text is only a response-format
+observation under deterministic rules.
+
+### Narrow model supplement and injection boundary
+
+Deterministic candidates are produced first and cannot be removed or replaced
+by a model. The only v1 model supplement is a reviewable
+`unit_error_candidate` for a numeric response already proven mechanically
+unparseable. The model receives an opaque request key, subject id, confirmed
+question and optional parent text, confirmed response text, the fixed numeric
+format-mismatch fact, and the one allowed candidate kind. It receives no owner,
+profile, learner, Exam identity, answer-key value, accepted-answer list,
+knowledge point, score, Progress, StudyAttempt, Coach, prior-error, or admission
+information. No expected answer enters this model payload.
+
+A unit candidate must cite at least one exact substring from the confirmed
+question or parent context and one exact substring from the confirmed response.
+This remains an untrusted model suggestion for owner review, not proof that the
+units are semantically comparable. Question, parent, and response strings are
+all untrusted data and never instructions. The prompt prohibits grading
+changes, advice, subjective attribution, and chain-of-thought. Native
+`JSON.parse` plus a closed TypeBox schema rejects Markdown repair, unknown
+fields or kinds, correctness fields, free reasoning, missing or duplicate
+opaque keys, fabricated spans, and oversized output.
+
+### Candidate artifact and public boundary
+
+Every suggestion has a server-derived candidate id, fixed
+`candidateStatus=candidate`, `generationSource` of `deterministic_candidate` or
+`model_candidate`, an uncalibrated `high|medium|low` confidence band, and closed
+structured evidence. Evidence is limited to response status, option-set
+difference, numeric difference kind, parser-format observation, or grounded
+text spans. It contains no free explanation. Exact semantic duplicates are
+deduplicated; fuzzy merging is not performed.
+
+The private `exam_error_diagnosis_candidates_v1.json` artifact binds the exact
+review, authoritative answer-key, assessment, grading algorithm, detector,
+model policy, generator, and candidate-schema versions. It stores neither
+question text, raw response text, expected answers, full grading specs, prompts,
+raw provider responses, credentials, usage, nor reasoning. The dedicated
+owner-authorized GET joins current confirmed question and response facts for
+review while withholding the complete expected answer and private grading
+specification. Ordinary Exam detail exposes only generation status and aggregate
+question/suggestion counts. Both dedicated methods use `private, no-store`.
+
+The private artifact also records a closed model-execution fact. It is
+`not_used` with the fixed `exam-error-suggestions` stage when no model call was
+made, or `used` with that stage plus the bounded provider and model identifiers
+from the exact memoized `resolveModel` result used by `callLLM`. This fact is
+part of the artifact semantic fingerprint. It never contains a prompt, raw
+response, reasoning, credential, base URL, model object, or connection setting,
+and it is absent from Exam events, ordinary Exam DTOs, and the dedicated public
+review bundle. Model resolution remains lazy, so reading an existing artifact
+does not depend on the current route or `DEFAULT_MODEL` configuration.
+
+### Persistence, replay, deletion, and non-authority
+
+The Exam stream appends `exam_error_suggestions_started` before detector or
+provider work. Provider work runs outside the mutation lock. Finalization
+reacquires the lock, reloads the active Exam, revalidates all three immutable
+sources and their fingerprints, writes the deterministic private object key,
+reads back and validates canonical bytes and SHA-256, and only then appends
+`exam_error_suggestions_completed`. Events contain source/version references,
+integrity facts, and aggregate deterministic/model counts, never candidate
+content or student/answer text.
+
+Retries recover created reservations, bytes written before the completed event,
+completed-response loss, and CAS races. Concurrent calls share an in-process
+flight; across processes the first valid committed artifact wins and later
+calls revalidate it. The provider may be called more than once before that
+commit, but model non-determinism never overwrites committed facts. A started
+event is enough to derive the exact cleanup key. Delete may win while the model
+is running; late finalization then rejects the inactive Exam and cannot restore
+the artifact or session.
+
+Error candidates are deliberately absent from the confirmed-observation
+resolver, strict Progress evidence collector, StudyAttempt projection, and
+Coach runtime. Corruption of this non-authoritative artifact makes only the
+dedicated error-suggestion surface fail closed. It cannot invalidate otherwise
+sound grading, knowledge mapping, confirmed Exam observations, or Progress.
+M3B-2C adds no OCR, vision, answer-key extraction, confirmed error type,
+KnowledgeProgress write, ExamObservation write, StudyAttempt write, Coach
+event, UI, production dependency, or database schema.

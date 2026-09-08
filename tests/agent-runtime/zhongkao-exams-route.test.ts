@@ -1,0 +1,693 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+import type { PublicExamSession } from '@/lib/zhongkao/exam';
+import { ExamError } from '@/lib/zhongkao/exam-errors';
+
+const mocks = vi.hoisted(() => ({
+  runtimeConfigured: true,
+  resolveRequestOwnerId: vi.fn(),
+  defaultExamServiceDeps: vi.fn(),
+  createExam: vi.fn(),
+  getExam: vi.fn(),
+  deleteExam: vi.fn(),
+  extractExamQuestionCandidates: vi.fn(),
+  captureExamStudentResponses: vi.fn(),
+}));
+
+vi.mock('@/lib/config/feature-flags', () => ({
+  isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+}));
+
+vi.mock('@/lib/server/agent-runtime/owner', () => ({
+  resolveRequestOwnerId: mocks.resolveRequestOwnerId,
+}));
+
+vi.mock('@/lib/server/zhongkao/exam-service', () => ({
+  defaultExamServiceDeps: mocks.defaultExamServiceDeps,
+  createExam: mocks.createExam,
+  getExam: mocks.getExam,
+  deleteExam: mocks.deleteExam,
+}));
+
+vi.mock('@/lib/server/zhongkao/exam-extraction-service', () => ({
+  extractExamQuestionCandidates: mocks.extractExamQuestionCandidates,
+}));
+
+vi.mock('@/lib/server/zhongkao/exam-response-service', () => ({
+  captureExamStudentResponses: mocks.captureExamStudentResponses,
+}));
+
+import { POST } from '@/app/api/zhongkao/exams/route';
+import { DELETE, GET } from '@/app/api/zhongkao/exams/[examSessionId]/route';
+import { POST as POST_EXTRACT } from '@/app/api/zhongkao/exams/[examSessionId]/extract/route';
+import { POST as POST_RESPONSES } from '@/app/api/zhongkao/exams/[examSessionId]/responses/route';
+
+const EXAM_SESSION_ID = `exam:v1:${'a'.repeat(64)}`;
+const NOW = '2026-08-31T08:00:00.000Z';
+const SERVICE_DEPS = { marker: 'exam-service-deps' };
+
+const CREATE_INPUT = {
+  clientRequestId: 'exam-request-1',
+  profileId: 'student-alpha',
+  subjectId: 'math',
+  title: 'August mock exam',
+  documents: [
+    {
+      role: 'question_paper',
+      ownerMaterialId: 'mat_00000000000000000000000000',
+    },
+    {
+      role: 'answer_key',
+      ownerMaterialId: 'mat_11111111111111111111111111',
+    },
+  ],
+} as const;
+
+const RESPONSE_INPUT = {
+  format: 'numbered_text_v1',
+  text: '1=B\n2=C\n17(1)=x=2',
+} as const;
+
+function publicExam(overrides: Partial<PublicExamSession> = {}): PublicExamSession {
+  return {
+    schemaVersion: 1,
+    examSessionId: EXAM_SESSION_ID,
+    profileId: 'student-alpha',
+    subjectId: 'math',
+    title: 'August mock exam',
+    status: 'ready_for_extraction',
+    createdAt: NOW,
+    questionExtraction: { status: 'not_started' },
+    studentResponseMatching: { status: 'not_started', needsReview: true },
+    humanReview: { status: 'not_started' },
+    grading: { status: 'not_started' },
+    knowledgeSuggestions: { status: 'not_started' },
+    errorSuggestions: { status: 'not_started' },
+    errorReview: { status: 'not_started' },
+    knowledgeMapping: { status: 'not_started' },
+    observationProjection: { status: 'not_started' },
+    documents: [
+      {
+        examDocumentId: 'exam-document-question-paper',
+        role: 'question_paper',
+        displayName: 'paper.pdf',
+        mimeType: 'application/pdf',
+        byteLength: 42,
+        snapshotStatus: 'snapshotted',
+      },
+      {
+        examDocumentId: 'exam-document-answer-key',
+        role: 'answer_key',
+        displayName: 'answers.pdf',
+        mimeType: 'application/pdf',
+        byteLength: 21,
+        snapshotStatus: 'snapshotted',
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function matchingExam(): PublicExamSession {
+  return publicExam({
+    questionExtraction: {
+      status: 'question_candidates_ready',
+      pageCount: 2,
+      candidateCount: 12,
+      needsReview: true,
+    },
+    studentResponseMatching: {
+      status: 'matching_ready',
+      responseCount: 3,
+      matchedCount: 2,
+      ambiguousCount: 0,
+      unmatchedCount: 1,
+      needsReview: true,
+    },
+  });
+}
+
+function post(body: BodyInit, contentType = 'application/json') {
+  return POST(
+    new NextRequest('http://localhost/api/zhongkao/exams', {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body,
+    }),
+  );
+}
+
+function postJson(body: unknown) {
+  return post(JSON.stringify(body));
+}
+
+function params(examSessionId = EXAM_SESSION_ID) {
+  return { params: Promise.resolve({ examSessionId }) };
+}
+
+function get(examSessionId = EXAM_SESSION_ID) {
+  return GET(
+    new NextRequest(`http://localhost/api/zhongkao/exams/${encodeURIComponent(examSessionId)}`),
+    params(examSessionId),
+  );
+}
+
+function remove(examSessionId = EXAM_SESSION_ID) {
+  return DELETE(
+    new NextRequest(`http://localhost/api/zhongkao/exams/${encodeURIComponent(examSessionId)}`, {
+      method: 'DELETE',
+    }),
+    params(examSessionId),
+  );
+}
+
+function extract(body: unknown = {}, examSessionId = EXAM_SESSION_ID) {
+  return POST_EXTRACT(
+    new NextRequest(
+      `http://localhost/api/zhongkao/exams/${encodeURIComponent(examSessionId)}/extract`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+    params(examSessionId),
+  );
+}
+
+function responses(
+  body: BodyInit,
+  examSessionId = EXAM_SESSION_ID,
+  contentType = 'application/json',
+) {
+  return POST_RESPONSES(
+    new NextRequest(
+      `http://localhost/api/zhongkao/exams/${encodeURIComponent(examSessionId)}/responses`,
+      {
+        method: 'POST',
+        headers: { 'content-type': contentType },
+        body,
+      },
+    ),
+    params(examSessionId),
+  );
+}
+
+function responsesJson(body: unknown, examSessionId = EXAM_SESSION_ID) {
+  return responses(JSON.stringify(body), examSessionId);
+}
+
+function allKeys(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(allKeys);
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, child]) => [key, ...allKeys(child)]);
+}
+
+beforeEach(() => {
+  mocks.runtimeConfigured = true;
+  mocks.resolveRequestOwnerId
+    .mockReset()
+    .mockImplementation((_request: NextRequest, responseHeaders: Headers) => {
+      responseHeaders.append('Set-Cookie', 'anonymous_id=exam-test; Path=/; HttpOnly');
+      return 'anon:exam-test';
+    });
+  mocks.defaultExamServiceDeps.mockReset().mockResolvedValue(SERVICE_DEPS);
+  mocks.createExam.mockReset().mockResolvedValue({ exam: publicExam(), replayed: false });
+  mocks.getExam.mockReset().mockResolvedValue(publicExam());
+  mocks.deleteExam.mockReset().mockResolvedValue('deleted');
+  mocks.extractExamQuestionCandidates.mockReset().mockResolvedValue({
+    exam: publicExam({
+      questionExtraction: {
+        status: 'question_candidates_ready',
+        pageCount: 2,
+        candidateCount: 12,
+        needsReview: false,
+      },
+    }),
+    replayed: false,
+  });
+  mocks.captureExamStudentResponses.mockReset().mockResolvedValue({
+    exam: matchingExam(),
+    replayed: false,
+  });
+});
+
+describe('POST /api/zhongkao/exams', () => {
+  it('returns 201 for a new Exam and 200 for an idempotent replay', async () => {
+    const created = await postJson(CREATE_INPUT);
+    expect(created.status).toBe(201);
+    expect(created.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    await expect(created.json()).resolves.toEqual({ exam: publicExam() });
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:exam-test');
+    expect(mocks.createExam).toHaveBeenCalledWith(SERVICE_DEPS, CREATE_INPUT);
+
+    mocks.createExam.mockResolvedValueOnce({ exam: publicExam(), replayed: true });
+    const replay = await postJson(CREATE_INPUT);
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    await expect(replay.json()).resolves.toEqual({ exam: publicExam() });
+  });
+
+  it('maps malformed JSON to a closed input error and preserves the owner cookie', async () => {
+    const response = await post('{"documents":');
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      errorCode: 'EXAM_INPUT_INVALID',
+      error: 'invalid exam request',
+    });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.createExam).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-JSON and oversized request bodies before service dispatch', async () => {
+    const wrongType = await post('{}', 'text/plain');
+    expect(wrongType.status).toBe(400);
+    await expect(wrongType.json()).resolves.toMatchObject({
+      errorCode: 'EXAM_INPUT_INVALID',
+    });
+
+    const oversized = await postJson({ padding: 'x'.repeat(33 * 1024) });
+    expect(oversized.status).toBe(400);
+    await expect(oversized.json()).resolves.toMatchObject({
+      errorCode: 'EXAM_INPUT_INVALID',
+    });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.createExam).not.toHaveBeenCalled();
+  });
+
+  it('closes unknown service failures without returning their message or storage locator', async () => {
+    const privateDiagnostic =
+      'provider stderr C:\\private\\student\\paper.pdf materials/v1/exams/exm_secret/raw';
+    mocks.createExam.mockRejectedValueOnce(new Error(privateDiagnostic));
+
+    const response = await postJson(CREATE_INPUT);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({
+      success: false,
+      errorCode: 'EXAM_SESSION_CONFLICT',
+      error: 'exam session changed concurrently',
+    });
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    expect(JSON.stringify(body)).not.toContain(privateDiagnostic);
+    expect(JSON.stringify(body)).not.toMatch(/provider stderr|C:\\private|materials\/v1\/exams/);
+  });
+
+  it('keeps the dedicated endpoint behind the configured runtime gate', async () => {
+    mocks.runtimeConfigured = false;
+
+    const response = await postJson(CREATE_INPUT);
+
+    expect(response.status).toBe(404);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.createExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/zhongkao/exams/[examSessionId]', () => {
+  it('returns the owner-authorized public Exam detail with its owner cookie', async () => {
+    const response = await get();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    await expect(response.json()).resolves.toEqual({ exam: publicExam() });
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:exam-test');
+    expect(mocks.getExam).toHaveBeenCalledWith(SERVICE_DEPS, EXAM_SESSION_ID);
+  });
+
+  it('returns a locator- and authority-free public payload, including for answer_key', async () => {
+    const response = await get();
+    const body = await response.json();
+    const keys = new Set(allKeys(body));
+    const forbiddenKeys = [
+      'sha256',
+      'sourceSha256',
+      'snapshotSha256',
+      'snapshotObjectKey',
+      'objectKey',
+      'ossKey',
+      'ownerId',
+      'ownerMaterialId',
+      'learnerKey',
+      'runtimeSessionId',
+      'eventId',
+      'operationId',
+      'operationFingerprint',
+      'clientRequestId',
+      'gradingSpec',
+      'authoritative',
+      'verified',
+      'correctAnswer',
+      'expectedAnswer',
+      'answers',
+      'knowledgePointIds',
+      'confirmedQuestionId',
+      'outcome',
+      'assessmentStatus',
+      'mappingSource',
+      'mappingRef',
+      'mappingArtifactRef',
+      'observationRef',
+      'observationArtifactRef',
+    ];
+
+    expect(response.status).toBe(200);
+    for (const key of forbiddenKeys) expect(keys.has(key), key).toBe(false);
+    expect(
+      body.exam.documents.find((document: { role: string }) => document.role === 'answer_key'),
+    ).toEqual({
+      examDocumentId: 'exam-document-answer-key',
+      role: 'answer_key',
+      displayName: 'answers.pdf',
+      mimeType: 'application/pdf',
+      byteLength: 21,
+      snapshotStatus: 'snapshotted',
+    });
+  });
+
+  it('makes malformed, missing, foreign, and deleted Exam ids indistinguishable', async () => {
+    const malformed = await get('../not-an-exam');
+    expect(malformed.status).toBe(404);
+    expect(await malformed.text()).toBe('Not found');
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.getExam).not.toHaveBeenCalled();
+
+    for (const ownerId of ['anon:missing', 'anon:foreign', 'anon:deleted']) {
+      mocks.resolveRequestOwnerId.mockImplementationOnce(
+        (_request: NextRequest, responseHeaders: Headers) => {
+          responseHeaders.append('Set-Cookie', `anonymous_id=${ownerId}; Path=/; HttpOnly`);
+          return ownerId;
+        },
+      );
+      mocks.getExam.mockRejectedValueOnce(new ExamError('EXAM_NOT_FOUND'));
+
+      const response = await get();
+
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe('Not found');
+      expect(response.headers.get('set-cookie')).toContain(`anonymous_id=${ownerId}`);
+      expect(mocks.defaultExamServiceDeps).toHaveBeenLastCalledWith(ownerId);
+    }
+  });
+});
+
+describe('DELETE /api/zhongkao/exams/[examSessionId]', () => {
+  it('returns 204 for both deletion and an idempotent already-deleted replay', async () => {
+    const deleted = await remove();
+    expect(deleted.status).toBe(204);
+    expect(deleted.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    expect(await deleted.text()).toBe('');
+    expect(mocks.deleteExam).toHaveBeenCalledWith(SERVICE_DEPS, EXAM_SESSION_ID);
+
+    mocks.deleteExam.mockResolvedValueOnce('already_deleted');
+    const replay = await remove();
+    expect(replay.status).toBe(204);
+    expect(await replay.text()).toBe('');
+    expect(mocks.deleteExam).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails a cross-owner delete as the same closed 404', async () => {
+    mocks.resolveRequestOwnerId.mockImplementationOnce(
+      (_request: NextRequest, responseHeaders: Headers) => {
+        responseHeaders.append('Set-Cookie', 'anonymous_id=foreign; Path=/; HttpOnly');
+        return 'anon:foreign';
+      },
+    );
+    mocks.deleteExam.mockRejectedValueOnce(new ExamError('EXAM_NOT_FOUND'));
+
+    const response = await remove();
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('Not found');
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=foreign');
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:foreign');
+  });
+
+  it('rejects malformed ids before resolving service dependencies', async () => {
+    const response = await remove('not-an-exam');
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('Not found');
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.deleteExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/zhongkao/exams/[examSessionId]/extract', () => {
+  it('runs the owner-authorized server extraction with a closed empty request', async () => {
+    const response = await extract();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:exam-test');
+    expect(mocks.extractExamQuestionCandidates).toHaveBeenCalledWith(SERVICE_DEPS, EXAM_SESSION_ID);
+    expect(body.exam.questionExtraction).toEqual({
+      status: 'question_candidates_ready',
+      pageCount: 2,
+      candidateCount: 12,
+      needsReview: false,
+    });
+    expect(JSON.stringify(body)).not.toMatch(/objectKey|sha256|operationId|artifactRef|digest/);
+  });
+
+  it('also accepts a truly empty body and bounds malformed request bytes', async () => {
+    const empty = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        { method: 'POST' },
+      ),
+      params(),
+    );
+    expect(empty.status).toBe(200);
+
+    mocks.extractExamQuestionCandidates.mockClear();
+    mocks.defaultExamServiceDeps.mockClear();
+    const oversized = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ padding: 'x'.repeat(1_025) }),
+        },
+      ),
+      params(),
+    );
+    expect(oversized.status).toBe(400);
+
+    const invalidUtf8 = await POST_EXTRACT(
+      new NextRequest(
+        `http://localhost/api/zhongkao/exams/${encodeURIComponent(EXAM_SESSION_ID)}/extract`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: new Uint8Array([0xff, 0xfe]),
+        },
+      ),
+      params(),
+    );
+    expect(invalidUtf8.status).toBe(400);
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.extractExamQuestionCandidates).not.toHaveBeenCalled();
+  });
+
+  it('rejects client-selected extraction fields before service dispatch', async () => {
+    const response = await extract({ extractor: 'cloud', questionCount: 99 });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'EXAM_INPUT_INVALID' });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.extractExamQuestionCandidates).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed Exam ids and keeps the route behind the runtime gate', async () => {
+    const malformed = await extract({}, 'not-an-exam');
+    expect(malformed.status).toBe(404);
+    expect(await malformed.text()).toBe('Not found');
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+
+    mocks.resolveRequestOwnerId.mockClear();
+    mocks.runtimeConfigured = false;
+    const disabled = await extract();
+    expect(disabled.status).toBe(404);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+  });
+
+  it('returns a closed parser failure without raw diagnostics or locators', async () => {
+    mocks.extractExamQuestionCandidates.mockRejectedValueOnce(
+      new ExamError('EXAM_DOCUMENT_EXTRACTION_FAILED'),
+    );
+    const response = await extract();
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      errorCode: 'EXAM_DOCUMENT_EXTRACTION_FAILED',
+      error: 'exam document extraction failed',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/unpdf|materials\/v1|C:\\|private/);
+  });
+});
+
+describe('POST /api/zhongkao/exams/[examSessionId]/responses', () => {
+  it('returns 201 for the first capture and 200 for an idempotent replay', async () => {
+    const created = await responsesJson(RESPONSE_INPUT);
+    expect(created.status).toBe(201);
+    expect(created.headers.get('set-cookie')).toContain('anonymous_id=exam-test');
+    await expect(created.json()).resolves.toEqual({ exam: matchingExam() });
+    expect(mocks.defaultExamServiceDeps).toHaveBeenCalledWith('anon:exam-test');
+    expect(mocks.captureExamStudentResponses).toHaveBeenCalledWith(
+      SERVICE_DEPS,
+      EXAM_SESSION_ID,
+      RESPONSE_INPUT,
+    );
+
+    mocks.captureExamStudentResponses.mockResolvedValueOnce({
+      exam: matchingExam(),
+      replayed: true,
+    });
+    const replay = await responsesJson(RESPONSE_INPUT);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual({ exam: matchingExam() });
+  });
+
+  it('maps closed-schema rejection and fatal UTF-8 to stable input errors', async () => {
+    mocks.captureExamStudentResponses.mockImplementationOnce(
+      async (_deps: unknown, _examSessionId: string, input: unknown) => {
+        if (
+          typeof input === 'object' &&
+          input !== null &&
+          Object.hasOwn(input, 'questionCandidateId')
+        ) {
+          throw new ExamError('EXAM_RESPONSE_INPUT_INVALID');
+        }
+        throw new Error('test expected a closed-schema field');
+      },
+    );
+    const extraField = await responsesJson({
+      ...RESPONSE_INPUT,
+      questionCandidateId: 'client-selected-question',
+    });
+    expect(extraField.status).toBe(400);
+    await expect(extraField.json()).resolves.toEqual({
+      success: false,
+      errorCode: 'EXAM_RESPONSE_INPUT_INVALID',
+      error: 'invalid exam response request',
+    });
+
+    mocks.defaultExamServiceDeps.mockClear();
+    mocks.captureExamStudentResponses.mockClear();
+    const invalidUtf8 = await responses(new Uint8Array([0xff, 0xfe]));
+    expect(invalidUtf8.status).toBe(400);
+    await expect(invalidUtf8.json()).resolves.toMatchObject({
+      errorCode: 'EXAM_RESPONSE_INPUT_INVALID',
+    });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.captureExamStudentResponses).not.toHaveBeenCalled();
+  });
+
+  it('enforces the raw one MiB request cap before service dispatch', async () => {
+    const oversized = await responsesJson({
+      format: 'numbered_text_v1',
+      text: 'x'.repeat(1024 * 1024),
+    });
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toEqual({
+      success: false,
+      errorCode: 'EXAM_RESPONSE_INPUT_TOO_LARGE',
+      error: 'exam response request is too large',
+    });
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+    expect(mocks.captureExamStudentResponses).not.toHaveBeenCalled();
+  });
+
+  it('fails malformed ids, disabled runtime and foreign ownership without an existence oracle', async () => {
+    const malformed = await responsesJson(RESPONSE_INPUT, 'not-an-exam');
+    expect(malformed.status).toBe(404);
+    expect(await malformed.text()).toBe('Not found');
+    expect(mocks.defaultExamServiceDeps).not.toHaveBeenCalled();
+
+    mocks.resolveRequestOwnerId.mockClear();
+    mocks.runtimeConfigured = false;
+    const disabled = await responsesJson(RESPONSE_INPUT);
+    expect(disabled.status).toBe(404);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+
+    mocks.runtimeConfigured = true;
+    mocks.resolveRequestOwnerId.mockImplementationOnce(
+      (_request: NextRequest, responseHeaders: Headers) => {
+        responseHeaders.append('Set-Cookie', 'anonymous_id=foreign-owner; Path=/; HttpOnly');
+        return 'anon:foreign-owner';
+      },
+    );
+    mocks.captureExamStudentResponses.mockRejectedValueOnce(new ExamError('EXAM_NOT_FOUND'));
+    const foreign = await responsesJson(RESPONSE_INPUT);
+    expect(foreign.status).toBe(404);
+    expect(await foreign.text()).toBe('Not found');
+    expect(foreign.headers.get('set-cookie')).toContain('anonymous_id=foreign-owner');
+    expect(mocks.defaultExamServiceDeps).toHaveBeenLastCalledWith('anon:foreign-owner');
+  });
+
+  it('returns stable safe failures without raw storage diagnostics', async () => {
+    const privateDiagnostic =
+      'PRIVATE-ANSWER C:\\private\\student\\responses.json materials/v1/exams/exm_secret';
+    mocks.captureExamStudentResponses.mockRejectedValueOnce(
+      Object.assign(new ExamError('EXAM_RESPONSE_ARTIFACT_CORRUPT'), {
+        privateDiagnostic,
+      }),
+    );
+    const response = await responsesJson(RESPONSE_INPUT);
+    const body = await response.json();
+    expect(response.status).toBe(409);
+    expect(body).toEqual({
+      success: false,
+      errorCode: 'EXAM_RESPONSE_ARTIFACT_CORRUPT',
+      error: 'exam response artifacts failed integrity checks',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/PRIVATE-ANSWER|C:\\private|materials\/v1\/exams/);
+  });
+
+  it('returns only matching summary counts and no response facts or private identities', async () => {
+    const response = await responsesJson(RESPONSE_INPUT);
+    const body = await response.json();
+    const keys = new Set(allKeys(body));
+    expect(response.status).toBe(201);
+    expect(body.exam.studentResponseMatching).toEqual({
+      status: 'matching_ready',
+      responseCount: 3,
+      matchedCount: 2,
+      ambiguousCount: 0,
+      unmatchedCount: 1,
+      needsReview: true,
+    });
+    for (const key of [
+      'text',
+      'rawAnswerText',
+      'rawLabel',
+      'locator',
+      'candidateId',
+      'responseCandidateId',
+      'questionCandidateIds',
+      'sha256',
+      'artifactSha256',
+      'inputSemanticFingerprint',
+      'captureRef',
+      'responseArtifactRef',
+      'matchingArtifactRef',
+      'eventId',
+      'operationId',
+    ]) {
+      expect(keys.has(key), key).toBe(false);
+    }
+    expect(JSON.stringify(body)).not.toContain('x=2');
+  });
+});

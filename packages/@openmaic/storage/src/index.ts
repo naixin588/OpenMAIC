@@ -116,12 +116,17 @@ export {
 
 export type {
   RuntimeStore,
+  StrictRuntimeSessionStore,
   RuntimeSessionInit,
+  RuntimeSessionStrictSelector,
   RuntimePayloadValidator,
   RuntimeAppendOptions,
   RuntimeTailOptions,
 } from './runtime/types.js';
-export { RuntimeAppendConflictError } from './runtime/types.js';
+export {
+  RuntimeAppendConflictError,
+  RuntimeSessionEnumerationCorruptError,
+} from './runtime/types.js';
 export { BrowserRuntimeStore, type BrowserRuntimeStoreOptions } from './runtime/browser.js';
 
 export {
@@ -207,9 +212,15 @@ export {
   AGENT_SESSION_MATERIAL_KINDS,
   AgentSessionMaterialError,
   createMaterialId,
+  createMaterialWriteClaimId,
   isAgentSessionMaterialKind,
   MATERIAL_EXTRACTION_STATUSES,
+  MATERIAL_EXTRACTION_ERROR_CODES,
   MAX_MATERIAL_EXTRACTION_RETRIES,
+  isMaterialExtractionErrorCode,
+  type AgentSessionMaterialObjectSlot,
+  type AgentSessionMaterialWriteClaim,
+  type AgentSessionMaterialWriteState,
   type AgentSessionMaterial,
   type AgentSessionMaterialKind,
   type AgentSessionMaterialStore,
@@ -222,6 +233,8 @@ export {
   type ClaimMaterialExtractionOptions,
   type CompleteMaterialExtractionInput,
   type MaterialExtractionFailureSettlement,
+  type MaterialExtractionErrorCode,
+  type CreateAgentSessionMaterialWriteClaimInput,
 } from './material/types.js';
 export {
   AGENT_SESSION_MATERIAL_PG_SCHEMA,

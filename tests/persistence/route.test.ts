@@ -527,9 +527,12 @@ describe('embedded persistence route', () => {
       'chat',
       'quizAttempt',
       'whiteboard',
+      'teacherStudentRoster',
+      'teacherStudentAnalysis',
       'zhongkaoStudentProfile',
       'zhongkaoStudyAttempt',
       'zhongkaoCoachEvent',
+      'zhongkaoExamEvent',
     ]);
   });
 
@@ -1083,7 +1086,13 @@ describe('embedded persistence route', () => {
     expect(byteStore.signReadUrl).toBeUndefined();
   });
 
-  it.each(['zhongkaoCoachEvent', 'zhongkaoStudyAttempt'] as const)(
+  it.each([
+    'zhongkaoCoachEvent',
+    'zhongkaoStudyAttempt',
+    'zhongkaoExamEvent',
+    'teacherStudentRoster',
+    'teacherStudentAnalysis',
+  ] as const)(
     'rejects creation of the server-only %s runtime kind before storage dispatch',
     async (kind) => {
       vi.stubEnv('DATABASE_URL', `postgres://server-only-create-${kind}-test`);
@@ -1121,6 +1130,9 @@ describe('embedded persistence route', () => {
 
   it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
     const privateAssessmentCanary = 'PRIVATE_ORIGINAL_ASSESSMENT_HTTP_CANARY_91KQ';
+    const privateKnowledgeMappingCanary = 'PRIVATE_EXAM_KNOWLEDGE_MAPPING_HTTP_CANARY_4R7M';
+    const privateErrorSuggestionsCanary = 'PRIVATE_EXAM_ERROR_SUGGESTIONS_HTTP_CANARY_8D2X';
+    const privateErrorReviewCanary = 'PRIVATE_EXAM_ERROR_REVIEW_HTTP_CANARY_4N8W';
     const coach = {
       id: 'coach-session-hidden',
       kind: 'zhongkaoCoachEvent',
@@ -1133,11 +1145,28 @@ describe('embedded persistence route', () => {
       stageId: 'stage-alpha',
       learnerKey: 'learner-alpha',
     };
+    const exam = {
+      id: 'exam-session-hidden',
+      kind: 'zhongkaoExamEvent',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
     const chat = {
       id: 'chat-session-visible',
       kind: 'chat',
       stageId: 'stage-alpha',
       learnerKey: 'learner-alpha',
+    };
+    const teacherRoster = {
+      id: 'teacher-roster-hidden',
+      kind: 'teacherStudentRoster',
+      stageId: 'stage-alpha',
+      learnerKey: 'learner-alpha',
+    };
+    const teacherAnalysis = {
+      ...teacherRoster,
+      id: 'teacher-analysis-hidden',
+      kind: 'teacherStudentAnalysis',
     };
     const createSession = vi.fn(async (init: unknown) => init);
     const appendRecord = vi.fn(async (init: unknown) => ({ ...(init as object), seq: 0 }));
@@ -1147,8 +1176,12 @@ describe('embedded persistence route', () => {
       {
         id: 'internal-event',
         payload: {
-          eventType: 'original_assessment_prepared',
+          eventType: 'exam_error_suggestions_completed',
           assessmentPayload: { gradingSpec: { acceptedAnswers: [privateAssessmentCanary] } },
+          knowledgePointIds: [privateKnowledgeMappingCanary],
+          suggestionArtifactRef: privateErrorSuggestionsCanary,
+          errorReviewArtifactRef: privateErrorReviewCanary,
+          confirmedErrorPatterns: [{ evidence: privateErrorReviewCanary }],
         },
       },
     ]);
@@ -1159,11 +1192,24 @@ describe('embedded persistence route', () => {
           ? coach
           : id === studyAttempts.id
             ? studyAttempts
-            : id === chat.id
-              ? chat
-              : undefined,
+            : id === exam.id
+              ? exam
+              : id === chat.id
+                ? chat
+                : id === teacherRoster.id
+                  ? teacherRoster
+                  : id === teacherAnalysis.id
+                    ? teacherAnalysis
+                    : undefined,
       ),
-      listSessions: vi.fn(async () => [coach, studyAttempts, chat]),
+      listSessions: vi.fn(async () => [
+        coach,
+        studyAttempts,
+        exam,
+        chat,
+        teacherRoster,
+        teacherAnalysis,
+      ]),
       setSessionStatus,
       deleteSession,
       appendRecord,
@@ -1179,15 +1225,31 @@ describe('embedded persistence route', () => {
 
     await expect(visible.getSession(coach.id)).resolves.toBeUndefined();
     await expect(visible.getSession(studyAttempts.id)).resolves.toBeUndefined();
+    await expect(visible.getSession(exam.id)).resolves.toBeUndefined();
+    await expect(visible.getSession(teacherRoster.id)).resolves.toBeUndefined();
+    await expect(visible.listRecords(teacherRoster.id)).resolves.toEqual([]);
+    await expect(visible.getSession(teacherAnalysis.id)).resolves.toBeUndefined();
+    await expect(visible.listRecords(teacherAnalysis.id)).resolves.toEqual([]);
     await expect(visible.getSession(chat.id)).resolves.toBe(chat);
     await expect(visible.listSessions('stage-alpha', 'learner-alpha')).resolves.toEqual([chat]);
     const hiddenCoachRecords = await visible.listRecords(coach.id);
     const hiddenStudyAttemptRecords = await visible.listRecords(studyAttempts.id);
+    const hiddenExamRecords = await visible.listRecords(exam.id);
     expect(hiddenCoachRecords).toEqual([]);
     expect(hiddenStudyAttemptRecords).toEqual([]);
-    expect(JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords])).not.toContain(
-      privateAssessmentCanary,
-    );
+    expect(hiddenExamRecords).toEqual([]);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateAssessmentCanary);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateKnowledgeMappingCanary);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateErrorSuggestionsCanary);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateErrorReviewCanary);
     expect(listRecords).not.toHaveBeenCalled();
     await expect(
       visible.appendRecord({
@@ -1197,6 +1259,53 @@ describe('embedded persistence route', () => {
         payload: {},
       }),
     ).rejects.toThrow('runtime session not found');
+    let forgedExamAppendError: unknown;
+    try {
+      await visible.appendRecord({
+        id: 'forged-exam-event',
+        sessionId: exam.id,
+        createdAt: '2026-08-28T08:00:00.000Z',
+        payload: {
+          eventType: 'exam_error_suggestions_completed',
+          suggestionArtifactRef: privateErrorSuggestionsCanary,
+        },
+      });
+    } catch (error) {
+      forgedExamAppendError = error;
+    }
+    expect(forgedExamAppendError).toMatchObject({ message: expect.stringContaining('not found') });
+    expect(String(forgedExamAppendError)).not.toContain(privateErrorSuggestionsCanary);
+    for (const payload of [
+      {
+        eventType: 'exam_error_review_started',
+        decisionSemanticFingerprint: privateErrorReviewCanary,
+      },
+      {
+        eventType: 'exam_error_review_completed',
+        errorReviewArtifactRef: privateErrorReviewCanary,
+      },
+      {
+        schemaVersion: 1,
+        observationId: 'forged-confirmed-pattern',
+        patternKind: 'numeric_sign_mismatch',
+        authoritySource: 'owner_confirmed_error_pattern',
+        evidence: privateErrorReviewCanary,
+      },
+    ]) {
+      let error: unknown;
+      try {
+        await visible.appendRecord({
+          id: 'forged-error-review-event',
+          sessionId: exam.id,
+          createdAt: '2026-08-28T08:00:00.000Z',
+          payload,
+        });
+      } catch (cause) {
+        error = cause;
+      }
+      expect(error).toMatchObject({ message: expect.stringContaining('not found') });
+      expect(String(error)).not.toContain(privateErrorReviewCanary);
+    }
     const commonAttempt = {
       schemaVersion: 2,
       coachSessionId: coach.id,
@@ -1260,14 +1369,51 @@ describe('embedded persistence route', () => {
     await expect(
       visible.setSessionStatus(studyAttempts.id, 'completed', '2026-08-28T08:00:00.000Z'),
     ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(exam.id, 'completed', '2026-08-28T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
     await visible.deleteSession(coach.id);
     await visible.deleteSession(studyAttempts.id);
+    await visible.deleteSession(exam.id);
+    await expect(
+      visible.appendRecord({
+        id: 'forged-teacher-registration',
+        sessionId: teacherRoster.id,
+        createdAt: '2026-09-08T08:00:00.000Z',
+        payload: {},
+      }),
+    ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(teacherRoster.id, 'completed', '2026-09-08T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
+    await visible.deleteSession(teacherRoster.id);
+    await expect(
+      visible.appendRecord({
+        id: 'forged-student-analysis',
+        sessionId: teacherAnalysis.id,
+        createdAt: '2026-09-08T08:00:00.000Z',
+        payload: {},
+      }),
+    ).rejects.toThrow('runtime session not found');
+    await expect(
+      visible.setSessionStatus(teacherAnalysis.id, 'completed', '2026-09-08T08:00:00.000Z'),
+    ).rejects.toThrow('runtime session not found');
+    await visible.deleteSession(teacherAnalysis.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(teacherAnalysis.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(teacherRoster.id);
     expect(appendRecord).not.toHaveBeenCalled();
     expect(setSessionStatus).not.toHaveBeenCalled();
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
     expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(exam.id);
 
-    for (const kind of ['zhongkaoCoachEvent', 'zhongkaoStudyAttempt']) {
+    for (const kind of [
+      'zhongkaoCoachEvent',
+      'zhongkaoStudyAttempt',
+      'zhongkaoExamEvent',
+      'teacherStudentRoster',
+      'teacherStudentAnalysis',
+    ]) {
       await expect(
         visible.createSession({
           id: `forged-${kind}`,
@@ -1295,6 +1441,9 @@ describe('embedded persistence route', () => {
     expect(deleteSession).toHaveBeenCalledWith(chat.id);
     expect(deleteSession).not.toHaveBeenCalledWith(coach.id);
     expect(deleteSession).not.toHaveBeenCalledWith(studyAttempts.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(exam.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(teacherRoster.id);
+    expect(deleteSession).not.toHaveBeenCalledWith(teacherAnalysis.id);
   });
 });
 

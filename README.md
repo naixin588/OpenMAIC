@@ -1,3 +1,38 @@
+<p align="center"><img src="public/brand/naixin-logo.svg" alt="耐心助手" width="300" /></p>
+
+# 耐心助手 · Naixin Teacher Workspace
+
+A teaching workspace for one teacher and multiple students, for local or trusted private-network use. Lesson preparation, classroom records, homework and exam analysis, evidence comparison, and parent feedback stay connected.
+
+[中文说明](README-zh.md) · [Scope and validation](TEACHER_WORKBENCH.md)
+
+- **Prepare lessons:** select textbooks and objectives, review a source-aware outline with the existing agent, then create and edit slides.
+- **Manage students:** start with a nickname, leave unknown information unconfirmed, and review recent learning observations.
+- **Record lessons:** save classroom observations, completed work, next steps and editable homework, with revision history.
+- **Analyze work:** upload student responses and marking references, then edit and review cited analysis drafts.
+- **Compare records:** review individual history or compare reviewed analyses using the same question-paper files.
+- **Write parent feedback:** assemble an editable draft from explicitly selected records; save, review, copy or download. Nothing is sent automatically.
+
+## Local setup
+
+With Node.js 22, pnpm and Docker Desktop installed:
+
+```powershell
+pnpm teacher:setup
+pnpm dev
+```
+
+Open `/teacher`. Configure models and document recognition in workspace settings. Student management, classroom records and evidence-assembled feedback do not require a model.
+
+See [local setup and backup](docs/teacher-local.md) and [capabilities and validation](TEACHER_WORKBENCH.md). Slide-level source references are currently requested and retained in the agent conversation; they are not yet enforced by a server-side citation validator. Verify model, OCR and teaching content quality using your materials.
+
+## Open-source attribution
+
+Built on [THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC), reusing its agent, materials, course editor and storage. The MIT license and original copyright notices are retained. Internal package names and compatibility interfaces keep their upstream identifiers.
+
+<details>
+<summary>Upstream technical documentation, release history and acknowledgments</summary>
+
 <!-- <p align="center">
   <img src="assets/logo-horizontal.png" alt="OpenMAIC" width="420"/>
 </p> -->
@@ -1036,3 +1071,6 @@ The repository bundles workspace packages that are **not** covered by the root M
 - `packages/pptxgenjs` — [MIT](packages/pptxgenjs/package.json) (third-party)
 
 When redistributing the repository as a whole, the terms of each bundled package above apply to that package's files.
+
+
+</details>

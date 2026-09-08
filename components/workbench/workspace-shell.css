@@ -37,8 +37,8 @@
 /* ── Tokens ──────────────────────────────────────────────────────────────
    Slate ramp + brand violet, matching the rest of the product. */
 .ws-root {
-  --ws-canvas-top: #f8fafc; /* slate-50  */
-  --ws-canvas-bottom: #f1f5f9; /* slate-100 */
+  --ws-canvas-top: #fbfaf6; /* slate-50  */
+  --ws-canvas-bottom: #f2f5ef; /* slate-100 */
   --ws-rail: rgba(255, 255, 255, 0.72);
   --ws-surface: rgba(255, 255, 255, 0.82);
 
@@ -119,9 +119,9 @@
      translucent: a popover you can read the list through is not a popover. */
   --ws-raised: #ffffff;
 
-  --ws-accent: #7c3aed; /* violet-600, the product's accent */
-  --ws-accent-thread: rgba(124, 58, 237, 0.32);
-  --ws-accent-wash: rgba(124, 58, 237, 0.08);
+  --ws-accent: #176b60; /* Naixin teal */
+  --ws-accent-thread: rgba(23, 107, 96, 0.32);
+  --ws-accent-wash: rgba(23, 107, 96, 0.08);
 
   --ws-live: #10b981; /* emerald-500, as v2 */
   --ws-fail: #f43f5e; /* rose-500,   as v2 */
@@ -138,7 +138,7 @@
   --ws-lift-focus:
     0 0 0 1px var(--ws-accent-thread), 0 0 0 4px var(--ws-accent-wash),
     0 2px 3px -1px rgba(15, 23, 42, 0.04), 0 8px 16px -4px rgba(15, 23, 42, 0.055),
-    0 22px 40px -14px rgba(15, 23, 42, 0.08), 0 40px 70px -34px rgba(124, 58, 237, 0.14);
+    0 22px 40px -14px rgba(15, 23, 42, 0.08), 0 40px 70px -34px rgba(23, 107, 96, 0.14);
   --ws-lift-sm:
     0 1px 1px rgba(15, 23, 42, 0.03), 0 2px 4px -1px rgba(15, 23, 42, 0.035),
     0 6px 12px -6px rgba(15, 23, 42, 0.045);
@@ -181,9 +181,9 @@
 
   --ws-raised: #1e293b; /* slate-800 — one step above the slate-900 canvas */
 
-  --ws-accent: #a78bfa; /* violet-400 reads on slate-950 */
-  --ws-accent-thread: rgba(167, 139, 250, 0.36);
-  --ws-accent-wash: rgba(167, 139, 250, 0.1);
+  --ws-accent: #87cabb; /* clear contrast on the dark canvas */
+  --ws-accent-thread: rgba(135, 202, 187, 0.36);
+  --ws-accent-wash: rgba(135, 202, 187, 0.1);
 
   --ws-lift:
     0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px -3px rgba(0, 0, 0, 0.32),
@@ -191,7 +191,7 @@
   --ws-lift-focus:
     0 0 0 1px var(--ws-accent-thread), 0 0 0 4px var(--ws-accent-wash),
     0 2px 4px -1px rgba(0, 0, 0, 0.3), 0 10px 20px -5px rgba(0, 0, 0, 0.36),
-    0 26px 48px -16px rgba(0, 0, 0, 0.44), 0 44px 76px -36px rgba(167, 139, 250, 0.2);
+    0 26px 48px -16px rgba(0, 0, 0, 0.44), 0 44px 76px -36px rgba(135, 202, 187, 0.2);
   --ws-lift-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 10px -4px rgba(0, 0, 0, 0.34);
   --ws-lift-sm-hover: 0 2px 4px rgba(0, 0, 0, 0.34), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
 
@@ -214,7 +214,7 @@
   background-image:
     /* the pool behind hero + composer — violet-white, so the brand tints the
        light rather than sitting in a swatch somewhere */
-    radial-gradient(58% 34% at 50% 43%, rgba(124, 58, 237, 0.062), rgba(124, 58, 237, 0) 72%),
+    radial-gradient(58% 34% at 50% 43%, rgba(23, 107, 96, 0.062), rgba(23, 107, 96, 0) 72%),
     /* a white core inside the pool, so the falloff is not one flat cone and
        the composer sits in the brightest part of the canvas */
     radial-gradient(40% 24% at 50% 47%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 74%),
@@ -232,7 +232,7 @@
 
 .dark .ws-canvas {
   background-image:
-    radial-gradient(62% 36% at 50% 43%, rgba(167, 139, 250, 0.075), rgba(167, 139, 250, 0) 70%),
+    radial-gradient(62% 36% at 50% 43%, rgba(135, 202, 187, 0.075), rgba(135, 202, 187, 0) 70%),
     radial-gradient(36% 22% at 50% 47%, rgba(226, 232, 240, 0.045), rgba(226, 232, 240, 0) 72%),
     var(--ws-grain);
 }
@@ -698,14 +698,14 @@
   width: 46px;
   height: 46px;
   border-radius: 12px;
-  filter: drop-shadow(0 6px 14px rgba(124, 58, 237, 0.22))
+  filter: drop-shadow(0 6px 14px rgba(23, 107, 96, 0.22))
     drop-shadow(0 1px 2px rgba(15, 23, 42, 0.1));
   user-select: none;
   -webkit-user-drag: none;
 }
 
 .dark .ws-hero-mark {
-  filter: drop-shadow(0 6px 18px rgba(167, 139, 250, 0.26))
+  filter: drop-shadow(0 6px 18px rgba(135, 202, 187, 0.26))
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 

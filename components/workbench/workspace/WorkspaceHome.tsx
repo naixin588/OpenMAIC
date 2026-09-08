@@ -35,7 +35,8 @@
  */
 
 import { type ReactNode, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, UsersRound } from 'lucide-react';
+import Link from 'next/link';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { arrivedByProSwap } from '@/lib/workbench/pro-swap';
@@ -82,7 +83,14 @@ export function WorkspaceHome({
           plain button, not a second ProBadge: two elements answering to
           `pro-mode-exit` would be one testid too many. */}
       <div className="flex h-12 shrink-0 items-center justify-between px-4 md:hidden">
-        <img src={brand.logoSrc} alt={brand.productName} className="h-5 w-auto" />
+        <Link
+          href="/teacher"
+          className="inline-flex items-center gap-2 text-xs font-medium text-primary"
+          data-testid="workspace-teacher-entry-mobile"
+        >
+          <img src={brand.markSrc} alt="" className="size-7" />
+          {t('teacher.title')}
+        </Link>
         <button
           type="button"
           data-testid="pro-workspace-exit-compact"
@@ -119,6 +127,14 @@ export function WorkspaceHome({
               The name sits on the lockup itself, not on the `ws-enter`
               wrapper, so the entrance animation is never captured. */}
           <div className={cn('flex flex-col items-center', !swapped && 'ws-enter ws-d1')}>
+            <Link
+              href="/teacher"
+              data-testid="workspace-teacher-entry-home"
+              className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <UsersRound className="size-3.5" aria-hidden="true" />
+              {t('teacher.title')}
+            </Link>
             <div
               className="relative w-fit"
               data-testid="pro-workspace-hero-lockup"

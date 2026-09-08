@@ -16,12 +16,22 @@ async function checkLayout(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await expect(page.getByRole('img', { name: 'OpenMAIC', exact: true })).toBeVisible();
+  const logo = page.locator('img[src="/brand/naixin-mark.svg"]');
+  await expect(logo).toBeVisible();
+  await expect(page.getByRole('link', { name: '耐心助手', exact: true })).toBeVisible();
   expect(
-    await page
-      .getByRole('img', { name: 'OpenMAIC', exact: true })
-      .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+    await logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
   ).toBe(true);
+}
+
+async function openStudents(page: Page) {
+  await page
+    .getByRole('navigation', { name: '教师工作台', exact: true })
+    .getByRole('button', { name: '学生档案', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: '学生档案', exact: true, level: 1 }),
+  ).toBeVisible();
 }
 
 test('real storage preserves cold-start profiles and isolates teacher identities', async ({
@@ -83,7 +93,12 @@ test('teacher can manage students and recover the workspace on desktop and mobil
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto('/teacher');
-  await expect(page.getByRole('heading', { name: '教师工作台', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByText('教师工作台', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '教学总览', exact: true, level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText('从第一份学生档案开始', { exact: true })).toBeVisible();
+  await openStudents(page);
   await expect(page.getByText('还没有学生档案', { exact: true })).toBeVisible();
   await createStudent(page, '虚构学生小禾');
   const profile = page.getByRole('article', { name: '学生资料卡' });
@@ -156,7 +171,7 @@ test('teacher can manage students and recover the workspace on desktop and mobil
   await createStudent(page, 'FictionalStudent' + 'x'.repeat(64));
   await checkLayout(page);
   await page.screenshot({ path: testInfo.outputPath('teacher-mobile-320.png'), fullPage: true });
-  await page.getByRole('button', { name: '工作区恢复', exact: true }).click();
+  await page.getByRole('button', { name: '工作区恢复', exact: true }).first().click();
   const recovery = page.locator('#teacher-recovery-code');
   await expect(recovery).not.toHaveValue('');
   const recoveryCode = await recovery.inputValue();
@@ -173,8 +188,10 @@ test('teacher can manage students and recover the workspace on desktop and mobil
   try {
     const recoveredPage = await recovered.newPage();
     await recoveredPage.goto('/teacher');
+    await expect(recoveredPage.getByText('从第一份学生档案开始', { exact: true })).toBeVisible();
+    await openStudents(recoveredPage);
     await expect(recoveredPage.getByText('还没有学生档案', { exact: true })).toBeVisible();
-    await recoveredPage.getByRole('button', { name: '工作区恢复', exact: true }).click();
+    await recoveredPage.getByRole('button', { name: '工作区恢复', exact: true }).first().click();
     await recoveredPage.getByRole('button', { name: '恢复其他工作区', exact: true }).click();
     await recoveredPage.locator('#teacher-restore-code').fill(recoveryCode);
     await recoveredPage.getByRole('button', { name: '确认切换工作区', exact: true }).click();

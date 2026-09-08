@@ -1,21 +1,27 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
   Archive,
-  ArchiveRestore,
   BookOpen,
+  ChartNoAxesCombined,
+  ChevronRight,
+  ClipboardPenLine,
   Database,
-  FilePenLine,
+  FileSearch,
   KeyRound,
+  LayoutDashboard,
   LoaderCircle,
+  MessageSquareText,
   Plus,
   RefreshCw,
   Search,
-  UserRound,
+  Settings2,
   UsersRound,
+  UserRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,15 +33,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getTeacherCopy, type TeacherCopy } from '@/lib/i18n/teacher';
+import { useBrand } from '@/lib/brand/brand-context';
+import { getTeacherCopy } from '@/lib/i18n/teacher';
+import { getTeacherWorkspaceCopy } from '@/lib/i18n/teacher-workspace';
 import type { TeacherStudent } from '@/lib/teacher/students';
-import type { ObservedField } from '@/lib/zhongkao/observed-field';
+import {
+  parseTeacherLocation,
+  teacherLocation,
+  teacherViews,
+  type TeacherView,
+} from '@/lib/teacher/workspace';
 import { cn } from '@/lib/utils';
 import { StudentEditor } from './StudentEditor';
 import { TeacherIdentityDialog } from './TeacherIdentityDialog';
 import { StudentAnalyses } from './StudentAnalyses';
+import { StudentLessons, ParentFeedback } from './StudentLessons';
+import { TeacherOverview } from './TeacherOverview';
+import { TeacherPreparation } from './TeacherPreparation';
+import { TeacherInsights } from './TeacherInsights';
+import { StudentProfilePanel, IconAction } from './StudentProfilePanel';
 import {
   createStudentDraft,
   filterStudents,
@@ -43,188 +60,21 @@ import {
   teacherRequest,
   TeacherRequestError,
 } from './student-ui';
-
-function IconAction({
-  label,
-  children,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={label}
-          disabled={disabled}
-          onClick={onClick}
-        >
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function ProfileField<T>({
-  label,
-  field,
-  copy,
-  format = String,
-}: {
-  label: string;
-  field: ObservedField<T>;
-  copy: TeacherCopy;
-  format?: (value: T) => string;
-}) {
-  return (
-    <div className="min-w-0 py-4">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-        <span className="break-words [overflow-wrap:anywhere]">
-          {field.value === null ? copy.unknown : format(field.value)}
-        </span>
-        {field.status !== 'unknown' && (
-          <span
-            className={cn(
-              'text-xs',
-              field.status === 'inferred'
-                ? 'text-amber-700 dark:text-amber-400'
-                : 'text-muted-foreground',
-            )}
-          >
-            {copy[field.status]}
-          </span>
-        )}
-      </dd>
-    </div>
-  );
-}
-
-export function StudentProfilePanel({
-  student,
-  copy,
-  locale,
-  onEdit,
-  onArchive,
-  busy,
-}: {
-  student: TeacherStudent;
-  copy: TeacherCopy;
-  locale: string;
-  onEdit: () => void;
-  onArchive: () => void;
-  busy: boolean;
-}) {
-  const { profile } = student;
-  const textbooks = Object.entries(profile.textbookVersions);
-  const dateFormat = new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-  return (
-    <article className="min-w-0 px-4 py-6 sm:px-7 lg:px-9" aria-label={copy.profile}>
-      <div className="flex min-w-0 items-start justify-between gap-3 border-b pb-5">
-        <div className="min-w-0">
-          <p className="text-muted-foreground mb-2 text-xs">{copy.profile}</p>
-          <h2 className="break-words text-xl font-semibold [overflow-wrap:anywhere]">
-            {profile.displayName.value ?? copy.unknown}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-xs">
-            {student.archived ? copy.archived : copy.active}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-1">
-          <IconAction label={copy.editStudent} onClick={onEdit} disabled={busy}>
-            <FilePenLine />
-          </IconAction>
-          <IconAction
-            label={student.archived ? copy.restore : copy.archive}
-            onClick={onArchive}
-            disabled={busy}
-          >
-            {busy ? (
-              <LoaderCircle className="animate-spin" />
-            ) : student.archived ? (
-              <ArchiveRestore />
-            ) : (
-              <Archive />
-            )}
-          </IconAction>
-        </div>
-      </div>
-      <section className="py-6" aria-label={copy.basicInfo}>
-        <h3 className="text-sm font-semibold">{copy.basicInfo}</h3>
-        <dl className="grid grid-cols-1 divide-y sm:grid-cols-2 sm:gap-x-8">
-          <ProfileField
-            label={copy.grade}
-            field={profile.grade}
-            copy={copy}
-            format={copy.gradeValue}
-          />
-          <ProfileField label={copy.examYear} field={profile.examYear} copy={copy} />
-          <ProfileField label={copy.region} field={profile.region} copy={copy} />
-        </dl>
-      </section>
-      <StudentAnalyses
-        profileId={profile.profileId}
-        nickname={profile.displayName.value ?? copy.unknown}
-        locale={locale}
-        archived={student.archived}
-      />
-      <section className="border-t py-6" aria-label={copy.textbooks}>
-        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h3 className="text-sm font-semibold">{copy.textbooks}</h3>
-          {!textbooks.some(([, value]) => value.status === 'confirmed') && (
-            <span className="text-muted-foreground text-xs">{copy.generic}</span>
-          )}
-        </div>
-        {textbooks.length ? (
-          <dl className="divide-y">
-            {textbooks.map(([subject, field]) => (
-              <ProfileField
-                key={subject}
-                label={subject}
-                field={field}
-                copy={copy}
-                format={(value) =>
-                  [value.publisher, value.title, value.volume].filter(Boolean).join(' · ')
-                }
-              />
-            ))}
-          </dl>
-        ) : (
-          <p className="text-muted-foreground text-sm">{copy.unknown}</p>
-        )}
-      </section>
-      <section className="border-t py-6" aria-label={copy.exploration}>
-        <h3 className="text-sm font-semibold">{copy.exploration}</h3>
-        <div className="mt-4 border-l-2 border-emerald-600 pl-4 dark:border-emerald-400">
-          <p className="text-sm">{copy.awaitingEvidence}</p>
-          <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.evidenceNeeded}</p>
-        </div>
-      </section>
-      <dl className="text-muted-foreground flex flex-wrap gap-x-8 gap-y-3 border-t pt-5 text-xs">
-        <div>
-          <dt className="mb-1">{copy.created}</dt>
-          <dd>{dateFormat.format(new Date(profile.createdAt))}</dd>
-        </div>
-        <div>
-          <dt className="mb-1">{copy.updated}</dt>
-          <dd>{dateFormat.format(new Date(profile.updatedAt))}</dd>
-        </div>
-      </dl>
-    </article>
-  );
-}
+import './teacher-workspace.css';
+export { StudentProfilePanel } from './StudentProfilePanel';
+const SettingsDialog = dynamic(
+  () => import('@/components/settings').then((module) => module.SettingsDialog),
+  { ssr: false },
+);
+const viewIcons = {
+  overview: LayoutDashboard,
+  preparation: BookOpen,
+  students: UsersRound,
+  lessons: ClipboardPenLine,
+  analyses: FileSearch,
+  insights: ChartNoAxesCombined,
+  feedback: MessageSquareText,
+};
 
 export function TeacherWorkbench({
   configured,
@@ -235,6 +85,10 @@ export function TeacherWorkbench({
 }) {
   const { locale } = useI18n();
   const copy = getTeacherCopy(locale);
+  const workspaceCopy = getTeacherWorkspaceCopy(locale);
+  const brand = useBrand();
+  const [view, setView] = useState<TeacherView>('overview');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [students, setStudents] = useState<TeacherStudent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [archived, setArchived] = useState(false);
@@ -248,9 +102,14 @@ export function TeacherWorkbench({
   const [archiveTarget, setArchiveTarget] = useState<TeacherStudent | null>(null);
   const loadSequence = useRef(0);
   const visibleStudents = filterStudents(students, archived, search);
-  const selected =
-    visibleStudents.find((student) => student.profile.profileId === selectedId) ??
-    visibleStudents[0];
+  const selected = selectedId
+    ? visibleStudents.find((student) => student.profile.profileId === selectedId)
+    : visibleStudents[0];
+
+  useEffect(() => {
+    const target = students.find((student) => student.profile.profileId === selectedId);
+    if (target) setArchived(target.archived);
+  }, [students, selectedId]);
 
   const refreshStudents = useCallback(
     async (signal?: AbortSignal) => {
@@ -291,6 +150,7 @@ export function TeacherWorkbench({
     setArchived(student.archived);
     setSearch('');
     setEditor(null);
+    navigate('students', student.profile.profileId);
     setActionError('');
   }
 
@@ -328,217 +188,435 @@ export function TeacherWorkbench({
     }
   }
 
+  function navigate(next: TeacherView, profileId?: string) {
+    setView(next);
+    if (profileId) {
+      setSelectedId(profileId);
+      setSearch('');
+      setArchived(students.find((item) => item.profile.profileId === profileId)?.archived ?? false);
+    }
+    window.history.pushState(
+      null,
+      '',
+      teacherLocation(next, profileId ?? selected?.profile.profileId),
+    );
+  }
+  useEffect(() => {
+    function readLocation() {
+      const location = parseTeacherLocation(window.location.search);
+      setView(location.view);
+      setSelectedId(location.profileId);
+      setSearch('');
+      if (!location.profileId) setArchived(false);
+    }
+    readLocation();
+    window.addEventListener('popstate', readLocation);
+    return () => window.removeEventListener('popstate', readLocation);
+  }, []);
+  const studentMode = ['students', 'lessons', 'analyses', 'feedback'].includes(view);
+  const selectedProps = selected
+    ? {
+        profileId: selected.profile.profileId,
+        nickname: selected.profile.displayName.value ?? copy.unknown,
+        locale,
+        archived: selected.archived,
+      }
+    : null;
+
   return (
-    <main className="bg-background min-h-[calc(100dvh-4rem)] min-w-0 [letter-spacing:0]">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link href="/" aria-label={copy.originalHome} className="shrink-0">
-              <Image src="/openmaic-mark.png" width={32} height={32} alt="OpenMAIC" />
-            </Link>
-            <h1 className="min-w-0 break-words text-lg font-semibold sm:text-xl">{copy.title}</h1>
-          </div>
-          <nav className="flex flex-wrap items-center gap-2" aria-label={copy.title}>
-            <Button asChild variant="outline">
-              <Link href={lessonPrepHref}>
-                <BookOpen />
-                {copy.lessonPrep}
-              </Link>
-            </Button>
-            {configured && (
-              <IconAction label={copy.identity} onClick={() => setIdentityOpen(true)}>
-                <KeyRound />
-              </IconAction>
-            )}
-          </nav>
-        </div>
-      </header>
-      {!configured ? (
-        <section className="mx-auto max-w-3xl px-5 py-16">
-          <Database className="text-muted-foreground mb-5 size-8" />
-          <h2 className="text-lg font-semibold">{copy.storageTitle}</h2>
-          <p className="text-muted-foreground mt-3 text-sm leading-6">{copy.storageDescription}</p>
-          <Button variant="outline" className="mt-6" onClick={() => window.location.reload()}>
-            <RefreshCw />
-            {copy.checkConfiguration}
-          </Button>
-        </section>
-      ) : (
-        <div className="mx-auto grid max-w-7xl min-w-0 md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)]">
-          <aside
-            className="min-w-0 border-b md:min-h-[calc(100dvh-10rem)] md:border-r md:border-b-0"
-            aria-label={copy.students}
+    <main className="teacher-workspace min-h-dvh min-w-0 lg:grid lg:grid-cols-[224px_minmax(0,1fr)]">
+      <aside className="teacher-rail border-b lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-b-0">
+        <Link
+          href="/teacher"
+          onClick={(event) => {
+            event.preventDefault();
+            navigate('overview');
+          }}
+          className="flex items-center gap-3 px-5 py-6"
+          aria-label={brand.productName}
+        >
+          <Image src={brand.markSrc} width={37} height={37} alt="" />
+          <span>
+            <span className="block text-lg font-semibold tracking-wide">{brand.productName}</span>
+            <span className="text-muted-foreground mt-1 block text-[10px] tracking-[.18em]">
+              {copy.title}
+            </span>
+          </span>
+        </Link>
+        <nav
+          aria-label={copy.title}
+          className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible"
+        >
+          {teacherViews.map((item, index) => {
+            const Icon = viewIcons[item];
+            return (
+              <div key={item} className="shrink-0">
+                {(index === 0 || index === 2) && (
+                  <p className="text-muted-foreground hidden px-3 pb-2 pt-5 text-[10px] tracking-wider lg:block">
+                    {index === 0 ? workspaceCopy.work : workspaceCopy.management}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  aria-current={view === item ? 'page' : undefined}
+                  onClick={() => navigate(item)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-[13px] transition-colors',
+                    view === item
+                      ? 'teacher-nav-active font-semibold'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <Icon className="size-[18px] shrink-0" />
+                  {workspaceCopy.views[item]}
+                </button>
+              </div>
+            );
+          })}
+        </nav>
+        <div className="hidden flex-1 lg:block" />
+        <div className="hidden space-y-1 border-t p-3 lg:block">
+          <Button
+            asChild
+            variant="ghost"
+            className="w-full justify-start text-xs text-muted-foreground"
           >
-            <div className="space-y-4 px-4 pt-5 pb-4 sm:px-6">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="flex items-center gap-2 text-sm font-semibold">
-                  <UsersRound className="size-4" />
-                  {copy.students}
-                  <span className="text-muted-foreground font-normal">
-                    {students.filter((student) => student.archived === archived).length}
-                  </span>
-                </h2>
-                <div className="flex shrink-0 gap-1">
-                  <IconAction
-                    label={copy.refresh}
-                    disabled={loading || busy}
+            <Link href={lessonPrepHref}>
+              <BookOpen />
+              {workspaceCopy.workspace}
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-xs text-muted-foreground"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 />
+            {workspaceCopy.settings}
+          </Button>
+          {configured && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-xs text-muted-foreground"
+              onClick={() => setIdentityOpen(true)}
+            >
+              <KeyRound />
+              {copy.identity}
+            </Button>
+          )}
+        </div>
+        <div className="hidden border-t px-6 py-4 text-[10px] text-muted-foreground lg:block">
+          <span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-600" />
+          {workspaceCopy.local}
+        </div>
+      </aside>
+      <div className="min-w-0">
+        <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b bg-background/70 px-5 py-4 sm:px-8">
+          <div className="flex min-w-0 items-center gap-2 text-xs">
+            <span className="text-muted-foreground">{copy.title}</span>
+            <ChevronRight className="text-muted-foreground size-3" />
+            <h1 className="font-medium">{workspaceCopy.views[view]}</h1>
+          </div>
+          <div className="flex items-center gap-1">
+            <IconAction label={workspaceCopy.settings} onClick={() => setSettingsOpen(true)}>
+              <Settings2 />
+            </IconAction>
+            {configured && (
+              <>
+                <IconAction label={copy.identity} onClick={() => setIdentityOpen(true)}>
+                  <KeyRound />
+                </IconAction>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || busy || Boolean(loadError)}
+                  onClick={() => setEditor({})}
+                >
+                  <Plus />
+                  {copy.addStudent}
+                </Button>
+              </>
+            )}
+          </div>
+        </header>
+        <div className="mx-auto max-w-[1600px] min-w-0 p-4 sm:p-6 xl:p-8">
+          {!configured ? (
+            <section className="teacher-card mx-auto max-w-3xl p-8 sm:p-12">
+              <Database className="text-muted-foreground mb-5 size-8" />
+              <h2 className="text-lg font-semibold">{copy.storageTitle}</h2>
+              <p className="text-muted-foreground mt-3 text-sm leading-6">
+                {copy.storageDescription}
+              </p>
+              <Button variant="outline" className="mt-6" onClick={() => window.location.reload()}>
+                <RefreshCw />
+                {copy.checkConfiguration}
+              </Button>
+            </section>
+          ) : (
+            <>
+              {(loadError || actionError) && (
+                <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-background p-4">
+                  <p role="alert" className="text-destructive min-w-0 flex-1 text-sm">
+                    {loadError || actionError}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading}
                     onClick={() => {
                       setActionError('');
                       void refreshStudents().catch(() => {});
                     }}
                   >
-                    <RefreshCw className={loading ? 'animate-spin' : undefined} />
-                  </IconAction>
-                  <IconAction
-                    label={copy.addStudent}
-                    disabled={loading || busy || Boolean(loadError)}
-                    onClick={() => setEditor({})}
-                  >
-                    <Plus />
-                  </IconAction>
-                </div>
-              </div>
-              <div className="flex border-b" role="group" aria-label={copy.students}>
-                {[false, true].map((value) => (
-                  <button
-                    key={String(value)}
-                    type="button"
-                    aria-pressed={archived === value}
-                    className={cn(
-                      'min-h-9 flex-1 border-b-2 px-2 text-sm transition-colors',
-                      archived === value
-                        ? 'border-emerald-600 font-medium text-foreground dark:border-emerald-400'
-                        : 'text-muted-foreground border-transparent hover:text-foreground',
-                    )}
-                    onClick={() => {
-                      setArchived(value);
-                      setSelectedId(null);
-                    }}
-                  >
-                    {value ? copy.archived : copy.active}
-                  </button>
-                ))}
-              </div>
-              <div className="relative">
-                <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-3 size-4" />
-                <Input
-                  type="search"
-                  aria-label={copy.search}
-                  placeholder={copy.search}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            {loadError ? (
-              <div className="space-y-3 px-6 py-5">
-                <p role="alert" className="text-destructive text-sm">
-                  {loadError}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refreshStudents().catch(() => {})}
-                >
-                  <RefreshCw />
-                  {copy.retry}
-                </Button>
-              </div>
-            ) : loading && !students.length ? (
-              <p
-                role="status"
-                className="text-muted-foreground flex items-center gap-2 px-6 py-8 text-sm"
-              >
-                <LoaderCircle className="size-4 animate-spin" />
-                {copy.loading}
-              </p>
-            ) : visibleStudents.length ? (
-              <ul className="max-h-72 overflow-y-auto pb-3 md:max-h-[calc(100dvh-17rem)]">
-                {visibleStudents.map((student) => (
-                  <li key={student.profile.profileId}>
-                    <button
-                      type="button"
-                      aria-pressed={selected?.profile.profileId === student.profile.profileId}
-                      className={cn(
-                        'flex w-full min-w-0 items-center gap-3 border-l-2 px-4 py-4 text-left transition-colors sm:px-6',
-                        selected?.profile.profileId === student.profile.profileId
-                          ? 'border-emerald-600 bg-muted dark:border-emerald-400'
-                          : 'border-transparent hover:bg-muted/60',
-                      )}
-                      onClick={() => setSelectedId(student.profile.profileId)}
-                    >
-                      <span className="bg-background text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
-                        <UserRound className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-sm font-medium [overflow-wrap:anywhere]">
-                          {student.profile.displayName.value ?? copy.unknown}
-                        </span>
-                        <span className="text-muted-foreground mt-1 block text-xs">
-                          {student.profile.grade.value === null
-                            ? copy.unknown
-                            : copy.gradeValue(student.profile.grade.value)}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="px-6 py-8">
-                <p className="text-muted-foreground text-sm">
-                  {search ? copy.noResults : archived ? copy.noArchived : copy.empty}
-                </p>
-                {!search && !archived && (
-                  <Button variant="outline" className="mt-4" onClick={() => setEditor({})}>
-                    <Plus />
-                    {copy.addStudent}
+                    <RefreshCw />
+                    {copy.retry}
                   </Button>
-                )}
-              </div>
-            )}
-          </aside>
-          <div className="min-w-0">
-            {actionError && (
-              <div className="flex flex-wrap items-center gap-3 border-b px-4 py-4 sm:px-7">
-                <p role="alert" className="text-destructive min-w-0 flex-1 text-sm">
-                  {actionError}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={loading}
-                  onClick={() => {
-                    setActionError('');
-                    void refreshStudents().catch(() => {});
-                  }}
-                >
-                  <RefreshCw />
-                  {copy.refresh}
-                </Button>
-              </div>
-            )}
-            {selected ? (
-              <StudentProfilePanel
-                student={selected}
-                copy={copy}
-                locale={locale}
-                busy={busy || loading || Boolean(loadError)}
-                onEdit={() => setEditor({ student: selected })}
-                onArchive={() =>
-                  selected.archived ? void changeArchived(selected) : setArchiveTarget(selected)
-                }
-              />
-            ) : (
-              <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 py-10 text-center md:min-h-[32rem]">
-                <UserRound className="text-muted-foreground/60 size-9" />
-                <p className="text-muted-foreground text-sm">{copy.selectStudent}</p>
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+              {view === 'overview' && (
+                <TeacherOverview
+                  students={students}
+                  loading={loading}
+                  locale={locale}
+                  onNavigate={navigate}
+                  onCreate={() => setEditor({})}
+                />
+              )}
+              {view !== 'overview' && (
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold">{workspaceCopy.views[view]}</h2>
+                  <p className="text-muted-foreground mt-2 text-sm leading-6">
+                    {workspaceCopy.viewHints[view]}
+                  </p>
+                </div>
+              )}
+              {view === 'preparation' && (
+                <TeacherPreparation locale={locale} lessonPrepHref={lessonPrepHref} />
+              )}
+              {view === 'insights' && (
+                <TeacherInsights
+                  students={students}
+                  locale={locale}
+                  onOpenStudent={(id) => navigate('analyses', id)}
+                />
+              )}
+              {studentMode && (
+                <div className="grid min-w-0 gap-5 xl:grid-cols-[248px_minmax(0,1fr)]">
+                  <aside
+                    className="teacher-card min-w-0 self-start overflow-hidden"
+                    aria-label={copy.students}
+                  >
+                    <div className="space-y-3 border-b p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold">
+                          {copy.students}
+                          <span className="text-muted-foreground ml-2 font-normal">
+                            {students.filter((item) => item.archived === archived).length}
+                          </span>
+                        </h3>
+                        <IconAction
+                          label={copy.refresh}
+                          disabled={loading || busy}
+                          onClick={() => void refreshStudents().catch(() => {})}
+                        >
+                          <RefreshCw className={loading ? 'animate-spin' : undefined} />
+                        </IconAction>
+                      </div>
+                      <div
+                        className="flex rounded-lg bg-muted p-1"
+                        role="group"
+                        aria-label={copy.students}
+                      >
+                        {[false, true].map((value) => (
+                          <button
+                            key={String(value)}
+                            type="button"
+                            aria-pressed={archived === value}
+                            className={cn(
+                              'min-h-8 flex-1 rounded-md text-xs',
+                              archived === value
+                                ? 'bg-background font-medium shadow-sm'
+                                : 'text-muted-foreground',
+                            )}
+                            onClick={() => {
+                              setArchived(value);
+                              setSelectedId(null);
+                            }}
+                          >
+                            {value ? copy.archived : copy.active}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="relative">
+                        <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-3 size-4" />
+                        <Input
+                          type="search"
+                          aria-label={copy.search}
+                          placeholder={copy.search}
+                          value={search}
+                          onChange={(event) => {
+                            setSearch(event.target.value);
+                            setSelectedId(null);
+                          }}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
+                    {loading && !students.length ? (
+                      <p
+                        role="status"
+                        className="text-muted-foreground flex items-center gap-2 p-5 text-xs"
+                      >
+                        <LoaderCircle className="size-4 animate-spin" />
+                        {copy.loading}
+                      </p>
+                    ) : visibleStudents.length ? (
+                      <ul className="max-h-48 overflow-y-auto p-2 xl:max-h-[calc(100dvh-24rem)]">
+                        {visibleStudents.map((student) => (
+                          <li key={student.profile.profileId}>
+                            <button
+                              type="button"
+                              aria-pressed={
+                                selected?.profile.profileId === student.profile.profileId
+                              }
+                              className={cn(
+                                'flex w-full min-w-0 items-center gap-3 rounded-lg p-3 text-left',
+                                selected?.profile.profileId === student.profile.profileId
+                                  ? 'teacher-nav-active'
+                                  : 'hover:bg-muted',
+                              )}
+                              onClick={() => navigate(view, student.profile.profileId)}
+                            >
+                              <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-medium">
+                                {Array.from(student.profile.displayName.value || '?')[0]}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block break-words text-sm font-medium [overflow-wrap:anywhere]">
+                                  {student.profile.displayName.value ?? copy.unknown}
+                                </span>
+                                <span className="text-muted-foreground mt-1 block text-[11px]">
+                                  {student.profile.grade.value === null
+                                    ? copy.unknown
+                                    : copy.gradeValue(student.profile.grade.value)}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="p-5">
+                        <p className="text-muted-foreground text-xs">
+                          {search ? copy.noResults : archived ? copy.noArchived : copy.empty}
+                        </p>
+                        {!search && !archived && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-4"
+                            onClick={() => setEditor({})}
+                          >
+                            <Plus />
+                            {copy.addStudent}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </aside>
+                  <section className="teacher-card min-w-0 overflow-hidden">
+                    {selected && selectedProps ? (
+                      <>
+                        {view !== 'students' && (
+                          <div className="flex min-w-0 flex-wrap items-center gap-3 border-b px-5 py-4 sm:px-7">
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--teacher-soft)] text-[var(--teacher-accent)]">
+                              <UserRound className="size-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-muted-foreground text-[10px]">
+                                {workspaceCopy.studentContext}
+                              </p>
+                              <h3 className="mt-1 break-words text-sm font-semibold [overflow-wrap:anywhere]">
+                                {selectedProps.nickname}
+                              </h3>
+                            </div>
+                            <Button
+                              className="ml-auto"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate('students', selected.profile.profileId)}
+                            >
+                              {copy.profile}
+                              <ChevronRight />
+                            </Button>
+                          </div>
+                        )}
+                        {selected.archived && (
+                          <p className="border-b bg-amber-50/50 px-5 py-3 text-xs leading-6 text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+                            {workspaceCopy.archiveNote}
+                          </p>
+                        )}
+                        {view === 'students' ? (
+                          <>
+                            <StudentProfilePanel
+                              student={selected}
+                              copy={copy}
+                              locale={locale}
+                              busy={busy || loading || Boolean(loadError)}
+                              onEdit={() => setEditor({ student: selected })}
+                              onArchive={() =>
+                                selected.archived
+                                  ? void changeArchived(selected)
+                                  : setArchiveTarget(selected)
+                              }
+                            />
+                            <nav
+                              className="flex flex-wrap gap-2 border-t p-5 sm:px-7"
+                              aria-label={workspaceCopy.profileActions}
+                            >
+                              {(['lessons', 'analyses', 'feedback'] as const).map((item) => (
+                                <Button
+                                  key={item}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => navigate(item, selected.profile.profileId)}
+                                >
+                                  {workspaceCopy.views[item]}
+                                  <ChevronRight />
+                                </Button>
+                              ))}
+                            </nav>
+                          </>
+                        ) : (
+                          <div className="min-w-0 px-4 py-2 sm:px-7">
+                            {view === 'lessons' && (
+                              <StudentLessons key={selectedProps.profileId} {...selectedProps} />
+                            )}
+                            {view === 'analyses' && (
+                              <StudentAnalyses key={selectedProps.profileId} {...selectedProps} />
+                            )}
+                            {view === 'feedback' && (
+                              <ParentFeedback key={selectedProps.profileId} {...selectedProps} />
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex min-h-72 flex-col items-center justify-center gap-4 p-6 text-center">
+                        <UsersRound className="text-muted-foreground/50 size-10" />
+                        <p className="text-muted-foreground text-sm">{workspaceCopy.noSelection}</p>
+                        <Button variant="outline" onClick={() => setEditor({})}>
+                          <Plus />
+                          {copy.addStudent}
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+      </div>
       {editor && (
         <StudentEditor
           copy={copy}
@@ -573,6 +651,9 @@ export function TeacherWorkbench({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+      {settingsOpen && (
+        <SettingsDialog open initialSection="providers" onOpenChange={setSettingsOpen} />
       )}
     </main>
   );

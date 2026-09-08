@@ -1,0 +1,54 @@
+.teacher-workspace {
+  --teacher-accent: #176b60;
+  --teacher-paper: #f7f8f5;
+  --teacher-soft: #eaf2ed;
+  background: var(--teacher-paper);
+  letter-spacing: 0;
+}
+.dark .teacher-workspace {
+  --teacher-accent: #8dd3bf;
+  --teacher-paper: #171d1b;
+  --teacher-soft: #213b32;
+}
+.teacher-rail {
+  background: var(--background);
+}
+.teacher-nav-active {
+  color: var(--teacher-accent);
+  background: var(--teacher-soft);
+}
+.teacher-hero {
+  background: linear-gradient(120deg, #e8f0e8 0%, #f3f5ed 65%, #f3ead9 100%);
+}
+.dark .teacher-hero {
+  background: linear-gradient(120deg, #233f34, #253930 70%, #413c28);
+}
+.teacher-hero-art {
+  background: radial-gradient(circle at 55% 40%, #f6d589 0 27%, transparent 27.5%);
+}
+.teacher-card {
+  border: 1px solid var(--border);
+  background: var(--background);
+  border-radius: 1rem;
+}
+.teacher-action {
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+.teacher-action:hover {
+  border-color: var(--teacher-accent);
+  box-shadow: 0 4px 16px #176b6008;
+}
+.teacher-workspace :where(input, textarea, select) {
+  max-width: 100%;
+}
+.teacher-workspace :where(button, a):focus-visible {
+  outline: 2px solid var(--teacher-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .teacher-action {
+    transition: none;
+  }
+}

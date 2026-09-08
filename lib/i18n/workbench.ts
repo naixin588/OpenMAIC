@@ -107,7 +107,7 @@ export const workbenchEn = {
       upload: 'Upload skill',
       uploadZip: 'Upload a zip archive',
       uploadFolder: 'Upload a folder',
-      officialDownload: 'OpenMAIC official skill',
+      officialDownload: 'Workbench guide skill',
       officialDownloadDesc:
         'Agent-guided SOP: import this skill into another agent workspace to get Live Demo classroom generation, local deployment, key configuration, classroom generation, and secondary development.',
       errNotZip: 'Only zip archives can be uploaded',
@@ -408,7 +408,7 @@ export const workbenchZh = {
       upload: '上传 skill',
       uploadZip: '上传 zip 包',
       uploadFolder: '上传文件夹',
-      officialDownload: 'OpenMAIC官方skill',
+      officialDownload: '工作台使用指南技能',
       officialDownloadDesc:
         '智能体引导式 SOP：将该skill导入其他智能体工作台，即可实现Live Demo 课堂生成、本地部署、密钥配置、课堂生成与二次开发等内容。',
       errNotZip: '只能上传 zip 包',

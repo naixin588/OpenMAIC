@@ -10,7 +10,7 @@
     "close": "閉じる"
   },
   "home": {
-    "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
+    "slogan": "根拠を大切に、一人ひとりの学びに寄り添う。",
     "greetingWithName": "こんにちは、{{name}}さん"
   },
   "toolbar": {
@@ -1845,7 +1845,7 @@
       "download": "ダウンロード",
       "detailFailed": "スキル詳細を読み込めませんでした",
       "contentLabel": "内容",
-      "builtinDetailNote": "このスキルは OpenMAIC に同梱されています。他のエージェントワークスペースにインポートするにはダウンロードしてください。",
+      "builtinDetailNote": "このスキルは Naixin Assistant に同梱されています。他のエージェントワークスペースにインポートするにはダウンロードしてください。",
       "upload": "アップロード",
       "uploading": "アップロード中…",
       "uploadFailed": "スキルをアップロードできませんでした。ファイルを確認して再試行してください。",

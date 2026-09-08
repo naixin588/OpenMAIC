@@ -52,7 +52,7 @@
       "upload": "スキルをアップロード",
       "uploadZip": "zipをアップロード",
       "uploadFolder": "フォルダをアップロード",
-      "officialDownload": "OpenMAIC公式スキル",
+      "officialDownload": "ワークスペースガイドスキル",
       "officialDownloadDesc": "エージェント向けガイドSOP：このskillを他のエージェントワークスペースにインポートすれば、Live Demo の教室生成、ローカルデプロイ、キー設定、教室生成、二次開発などが利用できます。",
       "retry": "再試行",
       "errNotZip": "アップロードできるのはzipのみです",

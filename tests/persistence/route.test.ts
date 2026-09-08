@@ -529,6 +529,8 @@ describe('embedded persistence route', () => {
       'whiteboard',
       'teacherStudentRoster',
       'teacherStudentAnalysis',
+      'teacherStudentLesson',
+      'teacherParentFeedback',
       'zhongkaoStudentProfile',
       'zhongkaoStudyAttempt',
       'zhongkaoCoachEvent',
@@ -1092,6 +1094,8 @@ describe('embedded persistence route', () => {
     'zhongkaoExamEvent',
     'teacherStudentRoster',
     'teacherStudentAnalysis',
+    'teacherStudentLesson',
+    'teacherParentFeedback',
   ] as const)(
     'rejects creation of the server-only %s runtime kind before storage dispatch',
     async (kind) => {
@@ -1413,6 +1417,8 @@ describe('embedded persistence route', () => {
       'zhongkaoExamEvent',
       'teacherStudentRoster',
       'teacherStudentAnalysis',
+      'teacherStudentLesson',
+      'teacherParentFeedback',
     ]) {
       await expect(
         visible.createSession({

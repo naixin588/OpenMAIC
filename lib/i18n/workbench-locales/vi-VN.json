@@ -52,7 +52,7 @@
       "upload": "Tải lên skill",
       "uploadZip": "Tải lên tệp zip",
       "uploadFolder": "Tải lên thư mục",
-      "officialDownload": "Skill chính thức của OpenMAIC",
+      "officialDownload": "Skill hướng dẫn không gian làm việc",
       "officialDownloadDesc": "SOP có hướng dẫn cho agent: nhập skill này vào bàn làm việc agent khác để có tạo lớp học Live Demo, triển khai cục bộ, cấu hình khóa, tạo lớp học và phát triển thứ cấp.",
       "retry": "Thử lại",
       "errNotZip": "Chỉ có thể tải lên tệp zip",

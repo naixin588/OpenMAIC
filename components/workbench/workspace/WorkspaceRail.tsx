@@ -73,6 +73,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import {
   Check,
   Folder,
@@ -89,6 +90,7 @@ import {
   Settings,
   Trash2,
   Upload,
+  UsersRound,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -636,6 +638,15 @@ export function WorkspaceRail({
         </div>
         <div className="ws-seam-rail w-8 shrink-0" aria-hidden="true" />
         <div className="flex flex-1 flex-col items-center gap-1 pt-3">
+          <Link
+            href="/teacher"
+            data-testid="workspace-teacher-entry-mini"
+            aria-label={t('teacher.title')}
+            title={t('teacher.title')}
+            className="ws-mini-btn text-primary"
+          >
+            <UsersRound className="size-4" aria-hidden="true" />
+          </Link>
           <button
             type="button"
             data-testid="pro-workspace-new-session-mini"
@@ -872,6 +883,15 @@ export function WorkspaceRail({
           full-width border: the rail already has one edge, and two hard
           rules meeting in a corner is the boxy look this pass removes. */}
       <div className="ws-seam-rail mx-4 shrink-0" aria-hidden="true" />
+
+      <Link
+        href="/teacher"
+        data-testid="workspace-teacher-entry"
+        className="mx-3 mt-3 flex items-center gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5 text-[13px] font-semibold text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        <UsersRound className="size-4 shrink-0" aria-hidden="true" />
+        {t('teacher.title')}
+      </Link>
 
       {/* Compose, one row to itself — the prototype's newrow shape. Find is no
           longer its square sibling: a search box is an action on the LIST, not

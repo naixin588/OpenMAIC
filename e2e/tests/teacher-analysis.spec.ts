@@ -13,6 +13,16 @@ async function createStudent(page: Page, nickname: string) {
   await expect(page.getByRole('article', { name: '学生资料卡' })).toContainText(nickname);
 }
 
+async function openAnalyses(page: Page) {
+  await page
+    .getByRole('navigation', { name: '教师工作台', exact: true })
+    .getByRole('button', { name: '作业与考试', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: '作业与考试', exact: true, level: 1 }),
+  ).toBeVisible();
+}
+
 test('real uploads and storage retain editable source-bound analysis without crossing students', async ({
   page,
   browser,
@@ -23,6 +33,7 @@ test('real uploads and storage retain editable source-bound analysis without cro
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/teacher');
   await createStudent(page, '虚构分析学生甲');
+  await openAnalyses(page);
   const students = (await (await page.request.get('/api/teacher/students')).json()).students;
   const profileId = students[0].profile.profileId;
   const path = `/api/teacher/students/${encodeURIComponent(profileId)}/analyses`;
@@ -97,6 +108,7 @@ test('real uploads and storage retain editable source-bound analysis without cro
   await page.getByRole('dialog').getByRole('button', { name: '撤回分析', exact: true }).click();
   await expect(detail).toContainText('已撤回');
   await createStudent(page, '虚构分析学生乙');
+  await openAnalyses(page);
   await expect(page.getByText('暂无作业或考试分析记录', { exact: true })).toBeVisible();
   expect((await (await page.request.get(path)).json()).analyses).toHaveLength(1);
   expect(

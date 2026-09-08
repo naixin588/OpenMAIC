@@ -52,7 +52,7 @@
       "upload": "Skill hochladen",
       "uploadZip": "zip-Archiv hochladen",
       "uploadFolder": "Ordner hochladen",
-      "officialDownload": "Offizieller OpenMAIC-Skill",
+      "officialDownload": "Skill zur Arbeitsbereich-Anleitung",
       "officialDownloadDesc": "Agenten-geführtes SOP: Importiere diesen Skill in eine andere Agenten-Workbench und erhältst Live-Demo-Classroom-Generierung, lokale Bereitstellung, Schlüsselkonfiguration, Classroom-Generierung und Weiterentwicklung.",
       "retry": "Erneut versuchen",
       "errNotZip": "Es können nur zip-Archive hochgeladen werden",

@@ -52,7 +52,7 @@
       "upload": "Subir skill",
       "uploadZip": "Subir archivo zip",
       "uploadFolder": "Subir carpeta",
-      "officialDownload": "Skill oficial de OpenMAIC",
+      "officialDownload": "Skill de guía del espacio de trabajo",
       "officialDownloadDesc": "SOP guiado por agentes: importa este skill a otra plataforma de agentes para obtener generación de aulas en Live Demo, despliegue local, configuración de claves, generación de aulas y desarrollo secundario.",
       "retry": "Reintentar",
       "errNotZip": "Solo se pueden subir archivos zip",

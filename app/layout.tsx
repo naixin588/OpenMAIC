@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import './globals.css';
@@ -12,6 +12,7 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
+import { DEFAULT_BRAND } from '@/lib/brand/brand-config';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
 // because only the stylesheet carries the per-subset `unicode-range`
@@ -29,10 +30,13 @@ import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
 import '@fontsource-variable/inter';
 
 export const metadata: Metadata = {
-  title: 'OpenMAIC',
-  description:
-    'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
+  title: DEFAULT_BRAND.productName,
+  applicationName: DEFAULT_BRAND.productName,
+  description: '耐心助手：从资料备课、课件制作到学生记录、学习分析与家长反馈，让教学有据可循。',
+  icons: { icon: [{ url: DEFAULT_BRAND.markSrc, type: 'image/svg+xml' }] },
 };
+
+export const viewport: Viewport = { themeColor: DEFAULT_BRAND.themeColor };
 
 export default function RootLayout({
   children,

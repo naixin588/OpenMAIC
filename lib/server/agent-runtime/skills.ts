@@ -34,7 +34,6 @@ import {
   type AgentTool,
   type Skill,
 } from '@earendil-works/pi-agent-core';
-import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node';
 import { load as loadYaml } from 'js-yaml';
 import { Type, type Static } from 'typebox';
 
@@ -43,6 +42,7 @@ import { skillHandleName } from '@/lib/workbench/composer-skills';
 import { composerTokens } from '@/lib/workbench/composer-tokens';
 import { agentRuntimeConfig } from './config';
 import { listUserSkills } from './user-skills';
+import { SkillDiscoveryEnv } from './skill-discovery-env';
 
 const log = createLogger('AgentSkills');
 
@@ -139,7 +139,7 @@ async function listBuiltinSkills(): Promise<LoadedSkill[]> {
   if (builtinCache) return builtinCache;
   if (!existsSync(skillsDir)) return (builtinCache = []);
 
-  const env = new NodeExecutionEnv({ cwd: skillsDir });
+  const env = new SkillDiscoveryEnv({ cwd: skillsDir });
   const { skills, diagnostics } = await loadSkills(env, skillsDir);
   for (const d of diagnostics) {
     log.warn(`${d.code}: ${d.message} (${d.path})`);
@@ -166,7 +166,7 @@ async function listBuiltinSkills(): Promise<LoadedSkill[]> {
       ...(title ? { title } : {}),
       description: skill.description,
       content: skill.content,
-      filePath: skill.filePath,
+      filePath: resolve(skill.filePath),
       constraints,
       source: 'builtin' as const,
     };

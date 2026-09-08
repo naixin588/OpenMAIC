@@ -31,6 +31,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useBrand } from '@/lib/brand/brand-context';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
@@ -130,6 +131,7 @@ const initialFormState: FormState = {
 
 function HomePage() {
   const { t } = useI18n();
+  const brand = useBrand();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   // Do not replay the classic hero's entrance after the route handoff already
@@ -835,8 +837,8 @@ function HomePage() {
         {/* ── Logo ── */}
         <div className="relative" data-pro-morph="lockup">
           <motion.img
-            src="/logo-horizontal.png"
-            alt="OpenMAIC"
+            src={brand.logoSrc}
+            alt={brand.productName}
             initial={heroEnter({ opacity: 0, scale: 0.9 })}
             animate={{ opacity: 1, scale: 1 }}
             transition={{
@@ -867,8 +869,8 @@ function HomePage() {
           {t('home.slogan')}
         </motion.p>
 
-        <Button asChild variant="outline" className="mb-6">
-          <Link href="/teacher">
+        <Button asChild className="mb-6 rounded-full px-6">
+          <Link href="/teacher" data-testid="home-teacher-entry">
             <UsersRound />
             {t('teacher.title')}
           </Link>
@@ -1355,7 +1357,7 @@ function HomePage() {
 
       {/* Footer — flows with content, at the very end */}
       <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
-        OpenMAIC Open Source Project
+        {brand.productName}
       </div>
     </div>
   );

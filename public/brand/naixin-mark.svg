@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">耐心助手</title>
+  <desc id="desc">打开的书页托起一颗暖黄色种子，代表耐心教学和持续成长。</desc>
+  <rect width="64" height="64" rx="19" fill="#176b60"/>
+  <circle cx="32" cy="17" r="5" fill="#f5bf62"/>
+  <path d="M13 24c8 0 14 3 19 9v19c-5-5-11-8-19-8V24Z" fill="#fff9ed"/>
+  <path d="M51 24c-8 0-14 3-19 9v19c5-5 11-8 19-8V24Z" fill="#c4e4d9"/>
+  <path d="M20 30c3 1 5 2 7 4m17-4c-3 1-5 2-7 4" fill="none" stroke="#176b60" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M32 33v17" fill="none" stroke="#176b60" stroke-width="2" stroke-linecap="round"/>
+</svg>

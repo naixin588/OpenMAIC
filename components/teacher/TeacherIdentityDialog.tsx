@@ -60,7 +60,7 @@ export function TeacherIdentityDialog({
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'openmaic-teacher-recovery.txt';
+    anchor.download = 'naixin-teacher-recovery.txt';
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice(copy.downloaded);

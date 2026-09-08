@@ -52,7 +52,7 @@
       "upload": "上傳 skill",
       "uploadZip": "上傳 zip 包",
       "uploadFolder": "上傳資料夾",
-      "officialDownload": "OpenMAIC官方skill",
+      "officialDownload": "工作台使用指南技能",
       "officialDownloadDesc": "智慧型代理人引導式 SOP：將該skill匯入其他智慧型代理人工作台，即可實現Live Demo 課堂生成、本地部署、金鑰設定、課堂生成與二次開發等內容。",
       "retry": "重試",
       "errNotZip": "只能上傳 zip 包",

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="64" viewBox="0 0 280 64" role="img" aria-labelledby="title desc">
+  <title id="title">耐心助手</title>
+  <desc id="desc">耐心助手标志，书页和种子组成的图形，配以中文名称。</desc>
+  <rect width="64" height="64" rx="19" fill="#176b60"/>
+  <circle cx="32" cy="17" r="5" fill="#f5bf62"/>
+  <path d="M13 24c8 0 14 3 19 9v19c-5-5-11-8-19-8V24Z" fill="#fff9ed"/>
+  <path d="M51 24c-8 0-14 3-19 9v19c5-5 11-8 19-8V24Z" fill="#c4e4d9"/>
+  <path d="M20 30c3 1 5 2 7 4m17-4c-3 1-5 2-7 4" fill="none" stroke="#176b60" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M32 33v17" fill="none" stroke="#176b60" stroke-width="2" stroke-linecap="round"/>
+  <text x="81" y="45" fill="#176b60" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif" font-size="42" font-weight="700" letter-spacing="3">耐心助手</text>
+</svg>

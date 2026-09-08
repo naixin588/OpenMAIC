@@ -1,5 +1,6 @@
 import { TEACHER_STUDENT_ROSTER_KIND } from '@/lib/teacher/students';
 import { TEACHER_ANALYSIS_KIND } from '@/lib/teacher/analysis';
+import { TEACHER_FEEDBACK_KIND, TEACHER_LESSON_KIND } from '@/lib/teacher/lessons';
 
 export const ZHONGKAO_RUNTIME_KINDS = Object.freeze({
   studentProfile: 'zhongkaoStudentProfile',
@@ -18,6 +19,8 @@ export type ZhongkaoLongLivedRuntimeKind =
 const SERVER_ONLY_RUNTIME_KINDS: ReadonlySet<string> = new Set([
   TEACHER_STUDENT_ROSTER_KIND,
   TEACHER_ANALYSIS_KIND,
+  TEACHER_LESSON_KIND,
+  TEACHER_FEEDBACK_KIND,
   ZHONGKAO_RUNTIME_KINDS.studyAttempt,
   ZHONGKAO_RUNTIME_KINDS.coachEvent,
   ZHONGKAO_RUNTIME_KINDS.examEvent,

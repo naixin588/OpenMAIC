@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { workbenchResourceFor } from '@/lib/i18n/workbench';
+import { teacherResourceFor } from '@/lib/i18n/teacher';
 import arSA from '@/lib/i18n/locales/ar-SA.json';
 import deDE from '@/lib/i18n/locales/de-DE.json';
 import enUS from '@/lib/i18n/locales/en-US.json';
@@ -27,7 +28,7 @@ import zhTW from '@/lib/i18n/locales/zh-TW.json';
  * It statically extracts the `t(...)` string literals from those directories,
  * resolves each against the SAME merged resource the runtime uses — the locale
  * JSON deep-merged with the hook-free `workbench.*` map from
- * `lib/i18n/workbench.ts` (mirroring `lib/i18n/config.ts`) — and asserts the
+ * `lib/i18n/workbench.ts` and the teacher resources (mirroring `lib/i18n/config.ts`) — and asserts the
  * key resolves to a non-empty string in every one of the 12 locales.
  *
  * Dynamic keys are NOT guessed. The two bounded dynamic prefixes are expanded
@@ -150,14 +151,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * The merged view the React `t` actually resolves against: the locale JSON
- * deep-merged with `{ workbench: workbenchResourceFor(language) }` — the same
+ * deep-merged with the workbench and teacher resources — the same
  * merge `lib/i18n/config.ts` performs for i18next.
  */
 function mergedResource(localeCode: string): Record<string, unknown> {
   const base: Record<string, unknown> = {
     ...(LOCALE_RESOURCES[localeCode] as Record<string, unknown>),
   };
-  const overlay = { workbench: workbenchResourceFor(localeCode) };
+  const overlay = {
+    workbench: workbenchResourceFor(localeCode),
+    teacher: teacherResourceFor(localeCode),
+  };
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(overlay)) {
     result[key] =

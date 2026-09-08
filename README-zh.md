@@ -1,3 +1,36 @@
+<p align="center"><img src="public/brand/naixin-logo.svg" alt="耐心助手" width="300" /></p>
+
+# 耐心助手 · 教师工作台
+
+面向一位老师管理多位学生，在本地或可信私网使用。备课、课后登记、作业考试分析、学生记录对照和家长反馈，在同一工作台完成。
+
+- **备课与课件**：选教材和考点资料、说明教学目标，进入智能体会话核对大纲，再制作和修改课件。
+- **学生档案**：昵称即可建档，未知信息保持未知，回看最近已复核的学习观察。
+- **课后登记**：登记课堂表现和完成情况，调整后续作业，保留原始记录及修改历史。
+- **作业与考试**：上传学生作答及评分依据，生成有原文引用的分析草稿，修改并复核。
+- **记录对照**：回看个人历次记录，或并排对照使用同一试卷文件的已复核考试分析。
+- **家长反馈**：从明确选定的记录整理可编辑草稿，保存、确认、复制或下载；不会自动发送。
+
+## 本地启动
+
+需要 Node.js 22、pnpm、Docker Desktop，首次初始化运行：
+
+```powershell
+pnpm teacher:setup
+pnpm dev
+```
+
+打开 `/teacher`。模型和识别服务在工作台设置中配置；不配置模型仍能建档、登记课堂和整理已有记录的反馈。
+
+操作与备份见 [本地部署说明](docs/teacher-local.md)，能力边界与验证记录见 [教师工作台验收](TEACHER_WORKBENCH.md)。备课的逐页引用目前通过智能体提示和会话保留，尚未提供服务端逐页强制校验；真实模型、OCR 和课件内容质量需要用你的材料核对。
+
+## 开源来源
+
+本项目基于 [THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC) 改造，复用其智能体、材料、课程编辑和存储能力。保留 MIT 许可证与原作者版权声明；内部包名及兼容接口仍沿用上游命名。
+
+<details>
+<summary>上游技术文档、历史版本和致谢</summary>
+
 <!-- <p align="center">
   <img src="assets/logo-horizontal.png" alt="OpenMAIC" width="420"/>
 </p> -->
@@ -808,3 +841,6 @@ OpenMAIC/
 - `packages/pptxgenjs` —— [MIT](packages/pptxgenjs/package.json)（第三方）
 
 整体再分发本仓库时，上述子包内文件适用其各自的协议。
+
+
+</details>

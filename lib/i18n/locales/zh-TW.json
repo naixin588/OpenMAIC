@@ -10,7 +10,7 @@
     "close": "關閉"
   },
   "home": {
-    "slogan": "多智能體互動課室中的生成式學習",
+    "slogan": "耐心教學，讓每一份進步都有依據。",
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
@@ -1830,7 +1830,7 @@
       "download": "下載",
       "detailFailed": "技能詳情載入失敗",
       "contentLabel": "正文",
-      "builtinDetailNote": "該技能隨 OpenMAIC 提供。下載後可匯入其他智能體工作台。",
+      "builtinDetailNote": "該技能隨 耐心助手 提供。下載後可匯入其他智能體工作台。",
       "upload": "上傳",
       "uploading": "正在上傳…",
       "uploadFailed": "技能上傳失敗。請檢查檔案後重試。",

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureAgentSessionSchema, PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
 import type { Queryable } from '@openmaic/storage/asset/pg';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
+import { MaterialByteStoreError } from '@/lib/server/materials/byte-store';
 import { sessionMaterialObjectKey } from '@/lib/server/materials/object-keys';
 
 const mocks = vi.hoisted(() => ({
@@ -181,6 +182,52 @@ describe('session materials persistence', () => {
     expect(await getSessionMaterial('session-1', rows[0]!.id)).not.toBeNull();
     // A material from another session reads as absent.
     expect(await getSessionMaterial('session-other', rows[0]!.id)).toBeNull();
+  });
+
+  it('retains a cleanup claim when an uncertain remote PUT commits after the request fails', async () => {
+    const { bytes, db, sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'session-late-put', ownerId: 'owner-a', prompt: 'p' });
+    let finishRemotePut: (() => void) | undefined;
+    let objectKey: string | undefined;
+    const deleteBytes = vi.fn(async (key: string) => void bytes.delete(key));
+    setMaterialByteStoreForTests({
+      put: async (key, body) => {
+        objectKey = key;
+        finishRemotePut = () => void bytes.set(key, Buffer.from(body as Uint8Array));
+        throw new MaterialByteStoreError(
+          'MATERIAL_BYTE_WRITE_UNCERTAIN',
+          'material byte write could not be confirmed',
+        );
+      },
+      get: async () => {
+        throw new Error('fictional remote read outage');
+      },
+      delete: deleteBytes,
+    });
+
+    await expect(
+      createWebMaterial('session-late-put', {
+        sourceUrl: 'https://example.com/fictional',
+        finalUrl: 'https://example.com/fictional',
+        title: '虚构测试资料',
+        markdown: 'fictional content',
+        fetchedAt: '2026-09-08T08:00:00.000Z',
+        contentType: 'text/html',
+        truncated: false,
+        downloadedBytes: 17,
+      }),
+    ).rejects.toThrow('session material byte write failed');
+    finishRemotePut?.();
+
+    expect(deleteBytes).not.toHaveBeenCalled();
+    expect(bytes.get(objectKey!)).toEqual(Buffer.from('fictional content'));
+    const claims = await db.query<{ object_key: string }>(
+      'SELECT object_key FROM agent_session_material_write_claims WHERE session_id = $1',
+      ['session-late-put'],
+    );
+    expect(claims.rows).toEqual([{ object_key: objectKey }]);
+    expect(await listSessionMaterials('session-late-put')).toEqual([]);
+    await db.close();
   });
 });
 

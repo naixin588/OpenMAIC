@@ -6,37 +6,20 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { assertPortableMaterialObjectKey } from './object-keys';
+import {
+  MaterialByteStoreError,
+  type MaterialByteInput,
+  type MaterialByteStore,
+  type MaterialByteStoreErrorCode,
+} from './byte-store';
+import { createS3MaterialByteStore } from './s3-bytes';
 
-export type MaterialByteInput = Buffer | Uint8Array | Readable | ReadableStream<Uint8Array>;
-
-export type MaterialByteStoreErrorCode =
-  | 'MATERIAL_BYTE_INVALID_KEY'
-  | 'MATERIAL_BYTE_WRITE_FAILED'
-  | 'MATERIAL_BYTE_READ_FAILED'
-  | 'MATERIAL_BYTE_DELETE_FAILED'
-  | 'ENOENT';
-
-/** Closed storage error whose public message never contains a key or local path. */
-export class MaterialByteStoreError extends Error {
-  override readonly name = 'MaterialByteStoreError';
-
-  constructor(
-    readonly code: MaterialByteStoreErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-export interface MaterialByteStore {
-  /** A rejected replacement must leave any previously committed object intact. */
-  put(key: string, body: MaterialByteInput, mime?: string): Promise<void>;
-  get(key: string): Promise<Buffer>;
-  /** Idempotently remove the object and any backend-owned incomplete replacement. */
-  delete(key: string): Promise<void>;
-  /** Optional backend capability used to reclaim crash-orphaned session objects. */
-  deletePrefix?(prefix: string): Promise<void>;
-}
+export { MaterialByteStoreError } from './byte-store';
+export type {
+  MaterialByteInput,
+  MaterialByteStore,
+  MaterialByteStoreErrorCode,
+} from './byte-store';
 
 function nodeReadable(body: MaterialByteInput): Readable {
   if (body instanceof Readable) return body;
@@ -150,7 +133,17 @@ export class LocalMaterialByteStore implements MaterialByteStore {
 let sharedStore: MaterialByteStore | null = null;
 
 export function getMaterialByteStore(): MaterialByteStore {
-  sharedStore ??= new LocalMaterialByteStore();
+  if (!sharedStore) {
+    const provider = process.env.MATERIAL_STORAGE_PROVIDER?.trim() || 'local';
+    if (provider === 'local') sharedStore = new LocalMaterialByteStore();
+    else if (provider === 's3') sharedStore = createS3MaterialByteStore(process.env);
+    else {
+      throw new MaterialByteStoreError(
+        'MATERIAL_BYTE_CONFIG_INVALID',
+        'material storage configuration is invalid',
+      );
+    }
+  }
   return sharedStore;
 }
 

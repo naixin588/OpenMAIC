@@ -30,6 +30,7 @@ import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore, type MaterialByteStore } from '@/lib/server/materials/bytes';
+import { MaterialByteStoreError } from '@/lib/server/materials/byte-store';
 import {
   isLegacySessionMaterialObjectKey,
   isSessionMaterialObjectKey,
@@ -199,11 +200,14 @@ async function writeSessionMaterialObject(
     objectSlot: input.objectSlot,
     objectKey: input.objectKey,
   });
+  let writeUncertain = false;
   try {
     const published = await store.executeClaimedMaterialWrite(claim.id, async () => {
       try {
         await byteStore.put(input.objectKey, input.bytes, input.mime);
-      } catch {
+      } catch (error) {
+        writeUncertain =
+          error instanceof MaterialByteStoreError && error.code === 'MATERIAL_BYTE_WRITE_UNCERTAIN';
         throw new Error('session material byte write failed');
       }
     });
@@ -214,9 +218,11 @@ async function writeSessionMaterialObject(
   } catch (error) {
     if (input.existingMaterialTracksObject) {
       await store.discardMaterialWrite(input.sessionId, claim.id).catch(() => undefined);
-    } else if (input.preserveClaimOnFailure) {
+    } else if (input.preserveClaimOnFailure || writeUncertain) {
       // Deterministic shared keys may belong to a concurrent successful writer.
-      // Retain this claim instead of deleting a winner's object.
+      // An uncertain remote PUT may also commit after an immediate DELETE.
+      // Retain its cleanup claim instead of deleting a winner's object or
+      // losing the reference to an object whose acknowledgement was lost.
     } else {
       const removed = await byteStore
         .delete(input.objectKey)

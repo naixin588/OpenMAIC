@@ -203,16 +203,19 @@ type YamlData = Partial<{
   'web-search': Record<string, Partial<ServerProviderEntry>>;
 }>;
 
-function loadYamlFile(filename: string): YamlData {
+function loadYamlFile(): YamlData {
   try {
-    const filePath = path.join(process.cwd(), filename);
+    // Keep the only supported filename literal at the filesystem call. A
+    // parameter here makes the production tracer conservatively include the
+    // whole working directory in every function that reads provider config.
+    const filePath = path.join(process.cwd(), 'server-providers.yml');
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = yaml.load(raw) as Record<string, unknown> | null;
     if (!parsed || typeof parsed !== 'object') return {};
     return parsed as YamlData;
   } catch (e) {
-    log.warn(`[ServerProviderConfig] Failed to load ${filename}:`, e);
+    log.warn('[ServerProviderConfig] Failed to load server-providers.yml:', e);
     return {};
   }
 }
@@ -554,7 +557,7 @@ function getConfig(): ServerConfig {
   const cached = _configs.get('');
   if (cached) return cached;
 
-  const yamlData = loadYamlFile(DEFAULT_FILENAME);
+  const yamlData = loadYamlFile();
   const config = buildConfig(yamlData);
   logConfig(config, DEFAULT_FILENAME);
   _configs.set('', config);

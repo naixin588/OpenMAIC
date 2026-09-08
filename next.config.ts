@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { NON_RUNTIME_TRACE_EXCLUDES } from './scripts/function-trace-policy.mjs';
 
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : 'standalone',
@@ -8,6 +9,11 @@ const nextConfig: NextConfig = {
       'skills/openmaic/**',
       'skills/agent-runtime/**',
     ],
+  },
+  outputFileTracingExcludes: {
+    // Root assets/ is README media. Share this exact narrow policy with the
+    // Vercel instrumentation filter; public/vendor and runtime skills remain.
+    '/*': NON_RUNTIME_TRACE_EXCLUDES,
   },
   typescript: {
     tsconfigPath: process.env.NODE_ENV === 'production' ? 'tsconfig.build.json' : 'tsconfig.json',

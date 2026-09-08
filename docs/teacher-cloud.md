@@ -33,6 +33,8 @@ Neon 使用直连地址，保留控制台提供的 TLS 配置，也可显式设�
 
 ## Vercel 限制
 
+- `Function Storage` 保存各地区、各保留部署的函数程序包，与 R2 中的教材或答卷容量独立。Vercel 按存储量和保留时间累计 GB-month 用量；缩减新包或清理旧部署不会立即抹去已发生的用量。先在 Usage → Functions Storage → Projects 定位项目，再在部署 Resources 中比较函数大小；不要因提醒而直接删除整个项目。参见 [Deployment Storage](https://vercel.com/docs/deployment-storage) 与 [优化指南](https://vercel.com/docs/deployment-storage/optimize)。
+- Vercel 使用 `pnpm build:vercel` 构建：配置读取保持固定文件路径，并从函数清单中排除仓库演示媒体、测试及本地数据。Next 16.1.2 的独立 instrumentation 清单需要在构建结束后应用同样的精确排除；保留运行时技能、PPTX worker、字体和 SDK。此处理只修改部署清单，不删除原始文件或学生资料。历史部署仍保留原包体，需要结合回滚需求单独管理；自动保留策略有最近部署和别名等例外，不能只缩短天数就保证立即释放空间。
 - 上传仍经原有 `/api/materials`，本次没有实现预签名直传。Vercel Functions 请求和响应体上限为 **4.5 MB**，即使项目允许更大文件、R2 容量充足，也不能绕过这个限制。经应用返回原始文件时同样受限。测试时选用明显小于上限的虚构材料；大 PDF、PPTX 或视频需要后续直传适配或常驻服务器。参见 [Vercel Functions limits](https://vercel.com/docs/functions/limitations)。
 - Agent 备课和资料提取仍在应用进程中启动后台计时器。Vercel serverless 不保证常驻运行，可能暂停或终止任务；R2 不解决任务持续执行。完整教学流程目前建议常驻 Node 服务或 Docker，搭配数据库和持久存储。
 - 原有部分课件/生成媒体路径仍使用 `data/` 本地目录，接入 Materials 的 R2 后端不等于全项目文件路径已适配无状态部署。

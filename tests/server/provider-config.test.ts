@@ -104,6 +104,36 @@ describe('provider-config', () => {
     yamlOverride = null;
   });
 
+  it('keeps fixed YAML loading, process caching and environment precedence after tracing changes', async () => {
+    yamlOverride =
+      'providers:\n  openai:\n    apiKey: fictional-yaml-key\n    baseUrl: https://fictional.example/v1\n    models: [fictional-model]\n';
+    vi.stubEnv('OPENAI_API_KEY', 'fictional-env-key');
+    const { getServerProviders, resolveApiKey, resolveBaseUrl } =
+      await import('@/lib/server/provider-config');
+
+    expect(resolveApiKey('openai')).toBe('fictional-env-key');
+    expect(resolveBaseUrl('openai')).toBe('https://fictional.example/v1');
+    expect(getServerProviders().openai.models).toEqual(['fictional-model']);
+
+    // Existing instances keep their startup configuration even if the file changes.
+    yamlOverride = 'providers: {}';
+    expect(resolveBaseUrl('openai')).toBe('https://fictional.example/v1');
+    vi.resetModules();
+    const reloaded = await import('@/lib/server/provider-config');
+    expect(reloaded.resolveApiKey('openai')).toBe('fictional-env-key');
+    expect(reloaded.resolveBaseUrl('openai')).toBeUndefined();
+  });
+
+  it.each(['providers: [', 'null', ''])(
+    'keeps environment configuration available when YAML is invalid or empty: %s',
+    async (yaml) => {
+      yamlOverride = yaml;
+      vi.stubEnv('OPENAI_API_KEY', 'fictional-fallback-key');
+      const { resolveApiKey } = await import('@/lib/server/provider-config');
+      expect(resolveApiKey('openai')).toBe('fictional-fallback-key');
+    },
+  );
+
   describe('resolveApiKey', () => {
     it('returns client key when provided', async () => {
       const { resolveApiKey } = await import('@/lib/server/provider-config');

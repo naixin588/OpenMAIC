@@ -18,6 +18,7 @@
     "teacher:restore": "node scripts/teacher-local-backup.mjs restore",
     "test:teacher:e2e": "playwright test --config e2e/teacher.config.ts",
     "build": "node scripts/assert-vendor-maic-importer.mjs && next build",
+    "build:vercel": "pnpm build && node scripts/prune-vercel-instrumentation-trace.mjs",
     "start": "next start",
     "lint": "eslint",
     "check:i18n-keys": "node scripts/check-i18n-keys.mjs",

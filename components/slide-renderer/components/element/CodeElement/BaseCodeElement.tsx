@@ -10,6 +10,8 @@ import type { PPTCodeElement, CodeLine } from '@openmaic/dsl';
 let highlighterPromise: Promise<any> | null = null;
 
 function getHighlighter() {
+  // Next can eliminate this client-only dependency from its server output.
+  if (typeof window === 'undefined') return Promise.resolve(null);
   if (!highlighterPromise) {
     highlighterPromise = import('shiki').then(({ createHighlighter }) =>
       createHighlighter({

@@ -10,6 +10,8 @@ import type { PPTCodeElement, CodeLine } from '@openmaic/dsl';
 let highlighterPromise: Promise<any> | null = null;
 
 function getHighlighter() {
+  // Syntax highlighting runs after hydration; SSR keeps the plain-code fallback.
+  if (typeof window === 'undefined') return Promise.resolve(null);
   if (!highlighterPromise) {
     highlighterPromise = import('shiki').then(({ createHighlighter }) =>
       createHighlighter({

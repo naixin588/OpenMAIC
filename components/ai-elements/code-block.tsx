@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { type BundledLanguage, codeToHtml, type ShikiTransformer } from 'shiki';
+import type { BundledLanguage, ShikiTransformer } from 'shiki';
 
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
@@ -54,6 +54,10 @@ export async function highlightCode(
   language: BundledLanguage,
   showLineNumbers = false,
 ) {
+  // Highlighting runs after hydration. Keep Shiki and its language data out
+  // of the server build instead of loading them in every page function.
+  if (typeof window === 'undefined') return ['', ''];
+  const { codeToHtml } = await import('shiki');
   const transformers: ShikiTransformer[] = showLineNumbers ? [lineNumberTransformer] : [];
 
   return await Promise.all([

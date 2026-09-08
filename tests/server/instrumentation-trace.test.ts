@@ -4,6 +4,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { pruneInstrumentationTrace } from '@/scripts/prune-vercel-instrumentation-trace.mjs';
+import {
+  NON_RUNTIME_TRACE_DIRECTORIES,
+  NON_RUNTIME_TRACE_EXCLUDES,
+  NON_RUNTIME_TRACE_FILES,
+  isNonRuntimeProjectFile,
+} from '@/scripts/function-trace-policy.mjs';
 
 const fixtures: string[] = [];
 
@@ -79,6 +85,23 @@ describe('Vercel instrumentation trace filtering', () => {
       'node_modules/example/assets/model.bin',
       'packages/example/tests/runtime-reference.json',
       'packages/example/tsconfig.tsbuildinfo',
+      'node_modules/example/test/runtime-data.json',
+      'node_modules/example/dist/index.umd.js',
+      'node_modules/@openmaic/importer/dist/index.umd.js',
+      'packages/@openmaic/storage/test-assets/runtime.bin',
+      'packages/@openmaic/storage/src/runtime/pg.ts',
+      'packages/@openmaic/storage/dist/runtime/pg.js',
+      'packages/@openmaic/importer/dist/index.cjs',
+      'packages/@openmaic/importer/dist/index.js',
+      'packages/pptxgenjs/dist/pptxgen.cjs.js',
+      'packages/pptxgenjs/dist/pptxgen.es.js',
+      'public/vendor/maic-importer/index.umd.js',
+      'lib/server/render-service.ts',
+      'lib/prompts/templates/task-engine-outlines/system.md',
+      'packages/@openmaic/generation/templates/task-engine-outlines/system.md',
+      'packages/@openmaic/generation/snippets/slide-core.md',
+      'packages/@openmaic/generation/prompts-pbl/plan.md',
+      'skills/agent-runtime/example/test/fictional-reference.json',
       'data/../../project-neighbor/data/runtime.json',
     ].map(entry);
     await writeFile(traceFile, JSON.stringify({ version: 1, files: kept }));
@@ -88,6 +111,62 @@ describe('Vercel instrumentation trace filtering', () => {
       keptFiles: kept.length,
     });
     expect(JSON.parse(await readFile(traceFile, 'utf8')).files).toEqual(kept);
+  });
+
+  it('applies exact workspace test/documentation and unexported bundle exclusions without deleting bytes', async () => {
+    const { root, traceFile, entry } = await fixture();
+    const omitted = [
+      'e2e/helpers/fixture.js',
+      'eval/whiteboard/fixture.json',
+      'packages/docs/content/docs/introduction.mdx',
+      'packages/docs/pnpm-lock.yaml',
+      'render-service/src/server.ts',
+      ...['dsl', 'editor', 'generation', 'importer', 'renderer', 'storage'].map(
+        (name) => `packages/@openmaic/${name}/test/fictional.test.ts`,
+      ),
+      'pnpm-lock.yaml',
+      'packages/@openmaic/importer/dist/index.umd.js',
+      'packages/pptxgenjs/dist/pptxgen.js',
+    ];
+    const kept = [
+      'packages/@openmaic/importer/package.json',
+      'packages/@openmaic/importer/dist/index.js',
+      'packages/@openmaic/importer/dist/index.cjs',
+      'lib/server/agent-runtime/import-pptx-worker.mjs',
+      'public/vendor/maic-importer/index.js',
+      'skills/agent-runtime/pptx-import/SKILL.md',
+    ];
+    for (const file of [...omitted, ...kept]) {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await writeFile(path.join(root, file), 'fictional retained source bytes');
+    }
+    await writeFile(
+      traceFile,
+      JSON.stringify({ version: 1, files: [...omitted, ...kept].map(entry) }),
+    );
+
+    expect(await pruneInstrumentationTrace(root)).toEqual({
+      removedFiles: omitted.length,
+      keptFiles: kept.length,
+    });
+    expect(JSON.parse(await readFile(traceFile, 'utf8')).files).toEqual(kept.map(entry));
+    for (const file of omitted)
+      expect(await readFile(path.join(root, file), 'utf8')).toBe('fictional retained source bytes');
+  });
+
+  it('uses the same exact policy for Next route exclusions and instrumentation', () => {
+    for (const directory of NON_RUNTIME_TRACE_DIRECTORIES) {
+      expect(NON_RUNTIME_TRACE_EXCLUDES).toContain(`./${directory}/**/*`);
+      expect(isNonRuntimeProjectFile(`${directory}/fictional-file.txt`)).toBe(true);
+      expect(isNonRuntimeProjectFile(`${directory}-runtime/fictional-file.txt`)).toBe(false);
+    }
+    for (const file of NON_RUNTIME_TRACE_FILES) {
+      expect(NON_RUNTIME_TRACE_EXCLUDES).toContain(`./${file}`);
+      expect(isNonRuntimeProjectFile(file)).toBe(true);
+      expect(isNonRuntimeProjectFile(`node_modules/example/${file}`)).toBe(false);
+    }
+    expect(NON_RUNTIME_TRACE_EXCLUDES).toContain('./*.tsbuildinfo');
+    expect(NON_RUNTIME_TRACE_EXCLUDES.some((glob) => glob.includes('node_modules'))).toBe(false);
   });
 
   it('handles portable Windows separators and stays idempotent without rewriting unchanged output', async () => {

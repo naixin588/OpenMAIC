@@ -3,9 +3,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { NON_RUNTIME_TRACE_DIRECTORIES } from './function-trace-policy.mjs';
-
-const excludedDirectories = new Set(NON_RUNTIME_TRACE_DIRECTORIES);
+import { isNonRuntimeProjectFile } from './function-trace-policy.mjs';
 
 function validRelativeFile(file) {
   return (
@@ -22,15 +20,11 @@ function isNonRuntimeFile(projectRoot, traceDirectory, file) {
   const resolved = path.resolve(traceDirectory, file.replace(/\\/g, '/'));
   const relative = path.relative(projectRoot, resolved);
   // A monorepo may legitimately trace dependencies above the project directory.
-  // Exclude only this project's root folders, never similarly named neighbors.
+  // Exclude only the declared project paths, never similarly named neighbors.
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     return false;
   }
-  const parts = relative.split(path.sep);
-  return (
-    (parts.length > 1 && excludedDirectories.has(parts[0])) ||
-    (parts.length === 1 && parts[0].endsWith('.tsbuildinfo'))
-  );
+  return isNonRuntimeProjectFile(relative.split(path.sep).join('/'));
 }
 
 /**
